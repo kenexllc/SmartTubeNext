@@ -22,6 +22,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
     private static final String TAG = StateUpdater.class.getSimpleName();
     private static final long MUSIC_VIDEO_LENGTH_MS = 6 * 60 * 1000;
     private static final int MAX_PERSISTENT_STATE_SIZE = 30;
+    private static final long LIVE_THRESHOLD_MS = 60_000;
     private boolean mIsPlayEnabled;
     private Video mVideo;
     private FormatItem mTempVideoFormat;
@@ -32,6 +33,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
     private Disposable mHistoryAction;
     private PlayerData mPlayerData;
     private boolean mIsPlayBlocked;
+    private float mVolume = 1;
 
     @Override
     public void onInitDone() { // called each time a video opened from the browser
@@ -39,7 +41,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
         mPlayerData = PlayerData.instance(getActivity());
 
         restoreClipData();
-        resetPositionIfNeeded(mVideo); // reset position of music videos
+        resetPositionIfNeeded(mVideo); // reset position of music/live videos
     }
 
     /**
@@ -69,11 +71,6 @@ public class StateUpdater extends PlayerEventListenerHelper {
 
     @Override
     public boolean onPreviousClicked() {
-        // Skip auto seek logic when running remote session
-        if (getController().getVideo() != null && getController().getVideo().isRemote) {
-            return false;
-        }
-
         boolean isFarFromStart = getController().getPositionMs() > 10_000;
 
         if (isFarFromStart) {
@@ -127,6 +124,14 @@ public class StateUpdater extends PlayerEventListenerHelper {
     }
 
     @Override
+    public void onEngineError(int type) {
+        // Oops. Error happens while playing (network lost etc).
+        if (getController().getPositionMs() > 1_000) {
+            saveState();
+        }
+    }
+
+    @Override
     public void onVideoLoaded(Video item) {
         // In this state video length is not undefined.
         restorePosition(item);
@@ -135,18 +140,19 @@ public class StateUpdater extends PlayerEventListenerHelper {
         restoreSubtitleFormat();
 
         updateHistory();
+
+        restoreVolume();
     }
 
     @Override
     public void onPlay() {
         setPlayEnabled(true);
-        Helpers.disableScreensaver(getActivity());
     }
 
     @Override
     public void onPause() {
         setPlayEnabled(false);
-        Helpers.enableScreensaver(getActivity());
+        saveState();
     }
 
     @Override
@@ -170,7 +176,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
         saveState();
 
         // Take into account different playback states
-        Helpers.enableScreensaver(getActivity());
+        //mScreensaverManager.enable();
     }
 
     private void clearStateOfNextVideo() {
@@ -187,7 +193,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
         State state = mStates.get(item.videoId);
 
         // Reset position of music videos
-        if (state != null && state.lengthMs < MUSIC_VIDEO_LENGTH_MS) {
+        if (state != null && (state.lengthMs < MUSIC_VIDEO_LENGTH_MS || item.isLive)) {
             resetPosition(item.videoId);
         }
     }
@@ -266,39 +272,74 @@ public class StateUpdater extends PlayerEventListenerHelper {
         Video video = getController().getVideo();
 
         if (video != null) {
-            // Don't save position if track is ended.
-            // Skip if paused.
-            long remainsMs = getController().getLengthMs() - getController().getPositionMs();
-            boolean isVideoEnded = remainsMs < 1_000;
-            if (!isVideoEnded || !getPlayEnabled()) {
-                mStates.put(video.videoId, new State(video.videoId, getController().getPositionMs(), getController().getLengthMs(), getController().getSpeed()));
+            // Exceptional cases:
+            // 1) Track is ended
+            // 2) Pause on end enabled
+            long lengthMs = getController().getLengthMs();
+            long positionMs = getController().getPositionMs();
+            long remainsMs = lengthMs - positionMs;
+            boolean isPositionActual = remainsMs > 1_000;
+            if (isPositionActual || !getPlayEnabled()) { // Is pause after each video enabled?
+                mStates.put(video.videoId, new State(video.videoId, positionMs, lengthMs, getController().getSpeed()));
+                // Sync video. You could safely use it later to restore state.
+                video.percentWatched = positionMs / (lengthMs / 100f);
             } else {
-                // Add null state to prevent restore position from history
+                // Reset position when video almost ended
                 resetPosition(video.videoId);
                 video.percentWatched = 0;
             }
 
             updateHistory();
             persistVideoState();
+            persistVolume();
         }
     }
+
+    //private void restorePosition(Video item) {
+    //    State state = mStates.get(item.videoId);
+    //
+    //    // internal storage has priority over item data loaded from network
+    //    if (state == null) {
+    //        // Ignore up to 10% watched because the video might be opened on phone and closed immediately.
+    //        boolean containsWebPosition = item.percentWatched > 10 && item.percentWatched < 100;
+    //        if (containsWebPosition) {
+    //            // Web state is buggy on short videos (e.g. video clips)
+    //            boolean isLongVideo = getController().getLengthMs() > MUSIC_VIDEO_LENGTH_MS;
+    //            if (isLongVideo) {
+    //                state = new State(item.videoId, getNewPosition(item.percentWatched));
+    //            }
+    //        }
+    //    }
+    //
+    //    // Do I need to check that item isn't live? (state != null && !item.isLive)
+    //    if (state != null) {
+    //        long remainsMs = getController().getLengthMs() - state.positionMs;
+    //        boolean isVideoEnded = remainsMs < 1_000;
+    //        if (!isVideoEnded || !getPlayEnabled()) {
+    //            getController().setPositionMs(state.positionMs);
+    //        }
+    //    }
+    //
+    //    if (!mIsPlayBlocked) {
+    //        getController().setPlay(getPlayEnabled());
+    //    }
+    //}
 
     private void restorePosition(Video item) {
         State state = mStates.get(item.videoId);
 
-        // internal storage has priority over item data loaded from network
-        if (state == null) {
-            boolean containsWebPosition = item.percentWatched > 0 && item.percentWatched < 100;
-            if (containsWebPosition) {
-                // Web state is buggy on short videos (e.g. video clips)
-                boolean isLongVideo = getController().getLengthMs() > MUSIC_VIDEO_LENGTH_MS;
-                if (isLongVideo) {
-                    state = new State(item.videoId, getNewPosition(item.percentWatched));
-                }
+        // Ignore up to 10% watched because the video might be opened on phone and closed immediately.
+        boolean containsWebPosition = item.percentWatched > 10 && item.percentWatched < 90;
+        if (containsWebPosition) {
+            // Web state is buggy on short videos (e.g. video clips)
+            boolean isLongVideo = getController().getLengthMs() > MUSIC_VIDEO_LENGTH_MS;
+            if (isLongVideo) {
+                state = new State(item.videoId, convertToMs(item.percentWatched));
             }
         }
 
-        if (state != null && !item.isLive) {
+        // Do I need to check that item isn't live? (state != null && !item.isLive)
+        if (state != null) {
             long remainsMs = getController().getLengthMs() - state.positionMs;
             boolean isVideoEnded = remainsMs < 1_000;
             if (!isVideoEnded || !getPlayEnabled()) {
@@ -312,7 +353,7 @@ public class StateUpdater extends PlayerEventListenerHelper {
     }
 
     private void restoreSpeed(Video item) {
-        boolean isLive = getController().getLengthMs() - getController().getPositionMs() < 30_000;
+        boolean isLive = getController().getLengthMs() - getController().getPositionMs() < LIVE_THRESHOLD_MS;
 
         if (isLive) {
             getController().setSpeed(1.0f);
@@ -328,8 +369,8 @@ public class StateUpdater extends PlayerEventListenerHelper {
         }
     }
 
-    private long getNewPosition(int percentWatched) {
-        long newPositionMs = getController().getLengthMs() / 100 * percentWatched;
+    private long convertToMs(float percentWatched) {
+        long newPositionMs = (long) (getController().getLengthMs() / 100 * percentWatched);
 
         boolean samePositions = Math.abs(newPositionMs - getController().getPositionMs()) < 10_000;
 
@@ -353,14 +394,23 @@ public class StateUpdater extends PlayerEventListenerHelper {
         return mIsPlayEnabled;
     }
 
+    private void persistVolume() {
+        mVolume = getController().getVolume();
+    }
+
+    private void restoreVolume() {
+        getController().setVolume(mVolume);
+    }
+
     private void updateHistory() {
-        if (getController().getVideo() == null) {
+        Video video = getController().getVideo();
+
+        if (video == null) {
             return;
         }
 
         RxUtils.disposeActions(mHistoryAction);
-
-        Video item = getController().getVideo();
+        
         MediaService service = YouTubeMediaService.instance();
         MediaItemManager mediaItemManager = service.getMediaItemManager();
 
@@ -368,10 +418,10 @@ public class StateUpdater extends PlayerEventListenerHelper {
 
         long positionSec = getController().getPositionMs() / 1_000;
 
-        if (item.mediaItem != null) {
-            historyObservable = mediaItemManager.updateHistoryPositionObserve(item.mediaItem, positionSec);
+        if (video.mediaItem != null) {
+            historyObservable = mediaItemManager.updateHistoryPositionObserve(video.mediaItem, positionSec);
         } else { // video launched form ATV channels
-            historyObservable = mediaItemManager.updateHistoryPositionObserve(item.videoId, positionSec);
+            historyObservable = mediaItemManager.updateHistoryPositionObserve(video.videoId, positionSec);
         }
 
         mHistoryAction = RxUtils.execute(historyObservable);

@@ -2,10 +2,10 @@ package com.liskovsoft.smartyoutubetv2.common.exoplayer.controller;
 
 import android.content.Context;
 import com.google.android.exoplayer2.ExoPlaybackException;
-import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
@@ -33,10 +33,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     private final ExoMediaSourceFactory mMediaSourceFactory;
     private final TrackSelectorManager mTrackSelectorManager;
     private final TrackInfoFormatter2 mTrackFormatter;
-    private PlayerEventListener mEventListener;
-    private Video mVideo;
     private boolean mOnSourceChanged;
-    private ExoPlayer mPlayer;
+    private Video mVideo;
+    private PlayerEventListener mEventListener;
+    private SimpleExoPlayer mPlayer;
     private PlayerView mPlayerView;
 
     public ExoPlayerController(Context context) {
@@ -135,11 +135,12 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
 
     @Override
     public boolean isPlaying() {
-        if (mPlayer == null) {
-            return false;
-        }
-
         return ExoUtils.isPlaying(mPlayer);
+    }
+
+    @Override
+    public boolean isLoading() {
+        return ExoUtils.isLoading(mPlayer);
     }
 
     @Override
@@ -157,13 +158,18 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
 
         if (mPlayer != null) {
             mPlayer.removeListener(this);
+            //mPlayer.stop();
             mPlayer.release();
             mPlayer = null;
         }
+
+        mPlayerView = null;
+        // Don't destroy it (needed inside bridge)!
+        //mEventListener = null;
     }
 
     @Override
-    public void setPlayer(ExoPlayer player) {
+    public void setPlayer(SimpleExoPlayer player) {
         mPlayer = player;
         player.addListener(this);
     }
@@ -244,10 +250,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
         for (TrackSelection selection : trackSelections.getAll()) {
             if (selection != null) {
                 // EXO: 2.12.1
-                Format format = selection.getSelectedFormat();
+                //Format format = selection.getSelectedFormat();
 
                 // EXO: 2.13.1
-                // Format format = selection.getFormat(0);
+                Format format = selection.getFormat(0);
 
                 mEventListener.onTrackChanged(ExoFormatItem.from(format));
 
@@ -291,16 +297,19 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
             Log.d(TAG, "onPlayerStateChanged: " + TrackSelectorUtil.stateToString(playbackState));
         }
 
-        boolean playPressed = Player.STATE_READY == playbackState && playWhenReady;
-        boolean pausePressed = Player.STATE_READY == playbackState && !playWhenReady;
-        boolean playbackEnded = Player.STATE_ENDED == playbackState && playWhenReady;
+        boolean isPlayPressed = Player.STATE_READY == playbackState && playWhenReady;
+        boolean isPausePressed = Player.STATE_READY == playbackState && !playWhenReady;
+        boolean isPlaybackEnded = Player.STATE_ENDED == playbackState && playWhenReady;
+        boolean isBuffering = Player.STATE_BUFFERING == playbackState && playWhenReady;
 
-        if (playPressed) {
+        if (isPlayPressed) {
             mEventListener.onPlay();
-        } else if (pausePressed) {
+        } else if (isPausePressed) {
             mEventListener.onPause();
-        } else if (playbackEnded) {
+        } else if (isPlaybackEnded) {
             mEventListener.onPlayEnd();
+        } else if (isBuffering) {
+            mEventListener.onBuffering();
         }
     }
 
@@ -320,6 +329,22 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
             return mPlayer.getPlaybackParameters().speed;
         } else {
             return -1;
+        }
+    }
+
+    @Override
+    public void setVolume(float volume) {
+        if (mPlayer != null && volume >= 0) {
+            mPlayer.setVolume(volume);
+        }
+    }
+
+    @Override
+    public float getVolume() {
+        if (mPlayer != null) {
+            return mPlayer.getVolume();
+        } else {
+            return 1;
         }
     }
 

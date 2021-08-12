@@ -11,7 +11,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.PlayerEventList
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionCategory;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionItem;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem;
-import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppSettingsPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.AutoFrameRateHelper;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.FormatItem;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.ModeSyncManager;
@@ -27,7 +27,7 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
     private static final String TAG = AutoFrameRateManager.class.getSimpleName();
     private static final int AUTO_FRAME_RATE_ID = 21;
     private static final int AUTO_FRAME_RATE_DELAY_ID = 22;
-    private final HqDialogManager mUiManager;
+    private final HQDialogManager mUiManager;
     private StateUpdater mStateUpdater;
     private final AutoFrameRateHelper mAutoFrameRateHelper;
     private final ModeSyncManager mModeSyncManager;
@@ -41,7 +41,7 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
         getController().setPlay(true);
     };
 
-    public AutoFrameRateManager(HqDialogManager uiManager, StateUpdater stateUpdater) {
+    public AutoFrameRateManager(HQDialogManager uiManager, StateUpdater stateUpdater) {
         mUiManager = uiManager;
         mStateUpdater = stateUpdater;
         mAutoFrameRateHelper = new AutoFrameRateHelper();
@@ -85,7 +85,7 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
 
     @Override
     public void onModeError(Mode newMode) {
-        String msg = getActivity().getString(R.string.msg_mode_switch_error, UhdHelper.formatMode(newMode));
+        String msg = getActivity().getString(R.string.msg_mode_switch_error, UhdHelper.toResolution(newMode));
         Log.e(TAG, msg);
         MessageHelpers.showMessage(getActivity(), msg);
         //applyAfr();
@@ -101,7 +101,7 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
 
     private void applyAfrWrapper() {
         if (mPlayerData.isAfrEnabled()) {
-            AppSettingsPresenter.instance(getActivity()).showDialogMessage("Applying AFR...", this::applyAfr, 1_000);
+            AppDialogPresenter.instance(getActivity()).showDialogMessage("Applying AFR...", this::applyAfr, 1_000);
         }
     }
 
@@ -167,7 +167,7 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
 
     private static OptionCategory createAutoFrameRateCategory(Context context, PlayerData playerData, Runnable onAfrCallback, Runnable onResolutionCallback, Runnable onFpsCorrectionCallback) {
         String title = context.getString(R.string.auto_frame_rate);
-        String fpsCorrection = context.getString(R.string.frame_rate_correction, "30->29.97, 60->59.94");
+        String fpsCorrection = context.getString(R.string.frame_rate_correction, "24->23.97, 30->29.97, 60->59.94");
         String resolutionSwitch = context.getString(R.string.resolution_switch);
         List<OptionItem> options = new ArrayList<>();
 
@@ -200,7 +200,8 @@ public class AutoFrameRateManager extends PlayerEventListenerHelper implements A
         List<OptionItem> options = new ArrayList<>();
 
         for (int pauseSec : new int[] {0, 1, 2, 3, 4, 5, 6, 7}) {
-            options.add(UiOptionItem.from(String.format("%s sec", pauseSec),
+            String optionTitle = pauseSec == 0 ? context.getString(R.string.option_never) : String.format("%s sec", pauseSec);
+            options.add(UiOptionItem.from(optionTitle,
                     optionItem -> {
                         playerData.setAfrPauseSec(pauseSec);
                         playerData.setAfrEnabled(true);

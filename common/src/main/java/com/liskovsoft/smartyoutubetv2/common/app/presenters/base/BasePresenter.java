@@ -45,7 +45,7 @@ public abstract class BasePresenter<T> implements Presenter<T> {
         // In case view was disposed like SplashView does
         mApplicationContext = new WeakReference<>(context.getApplicationContext());
 
-        initGlobalData();
+        //initGlobalData();
     }
 
     @Override
@@ -71,7 +71,8 @@ public abstract class BasePresenter<T> implements Presenter<T> {
 
     @Override
     public void onViewDestroyed() {
-        // NOP
+        // View stays in RAM after has been destroyed. Is it a bug?
+        mView = new WeakReference<>(null);
     }
 
     @Override
@@ -79,17 +80,17 @@ public abstract class BasePresenter<T> implements Presenter<T> {
         // NOP
     }
 
-    private void initGlobalData() {
-        if (sIsGlobalDataInitialized || getContext() == null) {
-            return;
-        }
-
-        boolean isActivity = getContext() instanceof Activity;
-
-        if (isActivity || !sIsGlobalDataInitializedTmp) {
-            Utils.initGlobalData(getContext());
-            sIsGlobalDataInitialized = isActivity;
-            sIsGlobalDataInitializedTmp = !isActivity;
-        }
-    }
+    //private void initGlobalData() {
+    //    if (sIsGlobalDataInitialized || getContext() == null) {
+    //        return;
+    //    }
+    //
+    //    boolean isActivity = getContext() instanceof Activity;
+    //
+    //    if (isActivity || !sIsGlobalDataInitializedTmp) {
+    //        Utils.initGlobalData(getContext());
+    //        sIsGlobalDataInitialized = isActivity;
+    //        sIsGlobalDataInitializedTmp = !isActivity;
+    //    }
+    //}
 }

@@ -17,10 +17,10 @@ public class ExoPlayerInitializer {
     private final int mDeviceRam;
     private final PlayerData mPlayerData;
 
-    public ExoPlayerInitializer(Context activity) {
-        mPlayerData = PlayerData.instance(activity);
+    public ExoPlayerInitializer(Context context) {
+        mPlayerData = PlayerData.instance(context);
 
-        int deviceRam = Helpers.getDeviceRam(activity);
+        int deviceRam = Helpers.getDeviceRam(context);
 
         // If ram is too big, bigger then max int value DeviceRam will return a negative number...
         // use 196MB as that can only happens if device has more than 17GB of RAM, so 196 is enough and safe
@@ -58,6 +58,14 @@ public class ExoPlayerInitializer {
     private DefaultLoadControl createLoadControl() {
         DefaultLoadControl.Builder baseBuilder = new DefaultLoadControl.Builder();
 
+        //baseBuilder.setAllocator(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
+        //        .setBufferDurationsMs(2_500,
+        //                5_000,
+        //                1_000,
+        //                2_000)
+        //        .setTargetBufferBytes(C.LENGTH_UNSET)
+        //        .setPrioritizeTimeOverSizeThresholds(true);
+
         if (PlayerController.BUFFER_HIGH == mPlayerData.getVideoBufferType()) {
             int minBufferMs = 30000; // 30 seconds
             int maxBufferMs = 36000000; // technical infinity, recommended here a very high number, the max will be based on setTargetBufferBytes() value
@@ -70,7 +78,7 @@ public class ExoPlayerInitializer {
         } else if (PlayerController.BUFFER_LOW == mPlayerData.getVideoBufferType()) {
             baseBuilder
                     .setBufferDurationsMs(
-                            DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 3,
+                            DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 3,
                             DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 3,
                             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 3,
                             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 3);

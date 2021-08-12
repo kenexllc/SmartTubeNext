@@ -10,7 +10,7 @@ public interface PlayerUiEventListener {
     int REPEAT_ALL = 2;
     void onSuggestionItemClicked(Video item);
     void onSuggestionItemLongClicked(Video item);
-    void onScrollEnd(VideoGroup group);
+    void onScrollEnd(Video item);
     boolean onPreviousClicked();
     boolean onNextClicked();
     void onPlayClicked();
@@ -25,10 +25,12 @@ public interface PlayerUiEventListener {
     void onTrackSelected(FormatItem track);
     void onSubtitlesClicked();
     void onPlaylistAddClicked();
-    void onVideoStatsClicked(boolean enabled);
+    void onDebugInfoClicked(boolean enabled);
     void onVideoSpeedClicked();
     void onSearchClicked();
     void onVideoZoomClicked();
     void onPipClicked();
+    void onScreenOffClicked();
+    void onPlaybackQueueClicked();
     void onControlsShown(boolean shown);
 }

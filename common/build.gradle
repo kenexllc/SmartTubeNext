@@ -34,10 +34,12 @@ android {
 
     productFlavors {
         stbeta {}
+        ststable {}
         storig {}
         strtarmenia {}
         stbolshoetv {}
         stredboxtv {}
+        stsibsetru {}
     }
 }
 
@@ -55,6 +57,8 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxandroid:' + rxAndroidVersion
     implementation 'io.reactivex.rxjava2:rxjava:' + rxJavaVersion
 
+    //////// BEGIN EXOPLAYER /////////
+
     implementation 'com.amazon.android:exoplayer:' + amazonExoplayerVersion
     implementation 'com.amazon.android:extension-okhttp:' + amazonExoplayerVersion
 
@@ -62,6 +66,11 @@ dependencies {
     // implementation 'com.google.android.exoplayer:extension-okhttp:' + exoplayerVersion
 
     // implementation 'com.github.amzn:exoplayer-amazon-port:' + amazonExoplayerJitpackVersion
+
+    // implementation project(':exoplayer-library')
+    // implementation project(':exoplayer-extension-okhttp')
+
+    //////// END EXOPLAYER //////////
 
     implementation 'androidx.media:media:' + mediaXLibraryVersion // exoplayer fix
 
@@ -71,10 +80,13 @@ dependencies {
 
     implementation 'androidx.browser:browser:' + browserXVersion
 
-    storigImplementation project(path: ':leanbackassistant')
-    storigImplementation project(path: ':appupdatechecker2')
     stbetaImplementation project(path: ':leanbackassistant')
     stbetaImplementation project(path: ':appupdatechecker2')
+    ststableImplementation project(path: ':leanbackassistant')
+    ststableImplementation project(path: ':appupdatechecker2')
+    storigImplementation project(path: ':leanbackassistant')
+    storigImplementation project(path: ':appupdatechecker2')
     strtarmeniaImplementation project(path: ':appupdatechecker2')
     stredboxtvImplementation project(path: ':appupdatechecker2')
+    stsibsetruImplementation project(path: ':appupdatechecker2')
 }

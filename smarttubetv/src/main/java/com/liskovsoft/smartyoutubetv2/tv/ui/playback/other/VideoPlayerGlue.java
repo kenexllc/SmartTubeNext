@@ -1,6 +1,6 @@
 package com.liskovsoft.smartyoutubetv2.tv.ui.playback.other;
 
-import android.app.Activity;
+import android.content.Context;
 import android.view.KeyEvent;
 import android.view.View;
 import androidx.leanback.media.PlaybackGlueHost;
@@ -17,8 +17,10 @@ import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.ChannelAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.ClosedCaptioningAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.HighQualityAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.PipAction;
+import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.PlaybackQueueAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.PlaylistAddAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.RepeatAction;
+import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.ScreenOffAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.SearchAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.SubscribeAction;
 import com.liskovsoft.smartyoutubetv2.tv.ui.playback.actions.ThumbsAction;
@@ -69,13 +71,15 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
     private final SearchAction mSearchAction;
     private final VideoZoomAction mVideoZoomAction;
     private final PipAction mPipAction;
+    private final ScreenOffAction mScreenOffAction;
+    private final PlaybackQueueAction mPlaybackQueueAction;
     private String mQualityInfo;
     private QualityInfoListener mQualityInfoListener;
     private int mPreviousAction = KeyEvent.ACTION_UP;
     private boolean mIsSingleKeyDown;
 
     public VideoPlayerGlue(
-            Activity context,
+            Context context,
             PlayerAdapter playerAdapter,
             OnActionClickedListener actionListener) {
         super(context, playerAdapter);
@@ -102,6 +106,8 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
         mSearchAction = new SearchAction(context);
         mVideoZoomAction = new VideoZoomAction(context);
         mPipAction = new PipAction(context);
+        mScreenOffAction = new ScreenOffAction(context);
+        mPlaybackQueueAction = new PlaybackQueueAction(context);
     }
 
     @Override
@@ -121,6 +127,7 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
         if (Helpers.isPictureInPictureSupported(getContext())) {
             adapter.add(mPipAction);
         }
+        adapter.add(mScreenOffAction);
         adapter.add(mSearchAction);
     }
 
@@ -139,6 +146,7 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
         adapter.add(mThumbsDownAction);
         adapter.add(mSubscribeAction);
         adapter.add(mClosedCaptioningAction);
+        adapter.add(mPlaybackQueueAction);
         adapter.add(mVideoStatsAction);
     }
 
@@ -220,7 +228,7 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
         invalidateUi(mThumbsDownAction);
     }
 
-    public void setVideoStatsActionState(boolean show) {
+    public void setDebugInfoActionState(boolean show) {
         mVideoStatsAction.setIndex(show ? ThumbsAction.INDEX_ON : ThumbsAction.INDEX_OFF);
         invalidateUi(mVideoStatsAction);
     }
@@ -297,7 +305,7 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
             handled = true;
         } else if (action == mVideoStatsAction) {
             incrementActionIndex(action);
-            mActionListener.onVideoStats(getActionIndex(action) == ThumbsAction.INDEX_ON);
+            mActionListener.onDebugInfo(getActionIndex(action) == ThumbsAction.INDEX_ON);
             handled = true;
         } else if (action == mVideoSpeedAction) {
             mActionListener.onVideoSpeed();
@@ -310,6 +318,12 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
             handled = true;
         } else if (action == mPipAction) {
             mActionListener.onPip();
+            handled = true;
+        } else if (action == mScreenOffAction) {
+            mActionListener.onScreenOff();
+            handled = true;
+        } else if (action == mPlaybackQueueAction) {
+            mActionListener.onPlaybackQueue();
             handled = true;
         }
 
@@ -424,7 +438,7 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
 
         void onPlaylistAdd();
 
-        void onVideoStats(boolean enabled);
+        void onDebugInfo(boolean enabled);
 
         void onVideoSpeed();
 
@@ -433,6 +447,10 @@ public class VideoPlayerGlue extends MaxControlsVideoPlayerGlue<PlayerAdapter> {
         void onVideoZoom();
 
         void onPip();
+
+        void onScreenOff();
+
+        void onPlaybackQueue();
 
         void onTopEdgeFocused();
 

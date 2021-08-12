@@ -11,10 +11,12 @@ import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoMenuPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGroupPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ChannelView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
-import com.liskovsoft.smartyoutubetv2.common.utils.ServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.utils.RxUtils;
+import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
 import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
 import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
@@ -29,7 +31,7 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
     private static ChannelPresenter sInstance;
     private final MediaService mMediaService;
     private final PlaybackPresenter mPlaybackPresenter;
-    private final ServiceManager mServiceManager;
+    private final MediaServiceManager mServiceManager;
     private String mChannelId;
     private Disposable mUpdateAction;
     private Disposable mScrollAction;
@@ -38,7 +40,7 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
         super(context);
         mMediaService = YouTubeMediaService.instance();
         mPlaybackPresenter = PlaybackPresenter.instance(context);
-        mServiceManager = ServiceManager.instance();
+        mServiceManager = MediaServiceManager.instance();
     }
 
     public static ChannelPresenter instance(Context context) {
@@ -60,6 +62,11 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
     }
 
     @Override
+    public void onVideoItemSelected(Video item) {
+        // NOP
+    }
+
+    @Override
     public void onVideoItemClicked(Video item) {
         if (item.isVideo()) {
             mPlaybackPresenter.openVideo(item);
@@ -74,7 +81,14 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
     }
 
     @Override
-    public void onScrollEnd(VideoGroup group) {
+    public void onScrollEnd(Video item) {
+        if (item == null) {
+            Log.e(TAG, "Can't scroll. Video is null.");
+            return;
+        }
+
+        VideoGroup group = item.group;
+
         Log.d(TAG, "onScrollEnd: Group title: " + group.getTitle());
 
         boolean scrollInProgress = mScrollAction != null && !mScrollAction.isDisposed();
@@ -86,7 +100,13 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
 
     @Override
     public void onViewDestroyed() {
+        super.onViewDestroyed();
         disposeActions();
+    }
+
+    @Override
+    public boolean hasPendingActions() {
+        return RxUtils.isAnyActionRunning(mScrollAction, mUpdateAction);
     }
 
     public static boolean canOpenChannel(Video item) {
@@ -94,7 +114,7 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
             return false;
         }
 
-        return item.videoId != null || item.channelId != null || item.isChannelUploads();
+        return item.videoId != null || item.channelId != null || item.isChannelUploadsSection();
     }
 
     public void openChannel(Video item) {
@@ -107,7 +127,7 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
                     openChannel(metadata.getChannelId());
                     item.channelId = metadata.getChannelId();
                 });
-            } else if (item.isChannelUploads()) {
+            } else if (item.isChannelUploadsSection()) {
                 // Maybe this is subscribed items view
                 ChannelUploadsPresenter.instance(getContext())
                         .obtainVideoGroup(item, group -> {
@@ -130,19 +150,16 @@ public class ChannelPresenter extends BasePresenter<ChannelView> implements Vide
         if (getView() != null) {
             getView().clear();
             updateRows(mChannelId);
+            // Fix double results. Prevent from doing the same in onViewInitialized()
+            mChannelId = null;
         }
 
         ViewManager.instance(getContext()).startView(ChannelView.class);
     }
 
     private void disposeActions() {
-        if (mUpdateAction != null && !mUpdateAction.isDisposed()) {
-            mUpdateAction.dispose();
-        }
-
-        if (mScrollAction != null && !mScrollAction.isDisposed()) {
-            mScrollAction.dispose();
-        }
+        RxUtils.disposeActions(mUpdateAction, mScrollAction);
+        mServiceManager.disposeActions();
     }
 
     private void updateRows(String channelId) {

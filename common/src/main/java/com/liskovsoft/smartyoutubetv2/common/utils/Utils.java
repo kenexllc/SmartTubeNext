@@ -74,6 +74,12 @@ public class Utils {
     }
 
     @TargetApi(17)
+    public static void displayShareEmbedVideoDialog(Context context, String videoId) {
+        Uri videoUrl = convertToEmbedVideoUrl(videoId);
+        showMultiChooser(context, videoUrl);
+    }
+
+    @TargetApi(17)
     public static void displayShareChannelDialog(Context context, String channelId) {
         Uri channelUrl = convertToFullChannelUrl(channelId);
         showMultiChooser(context, channelUrl);
@@ -94,6 +100,11 @@ public class Utils {
 
     private static Uri convertToFullVideoUrl(String videoId) {
         String url = String.format("https://www.youtube.com/watch?v=%s", videoId);
+        return Uri.parse(url);
+    }
+
+    private static Uri convertToEmbedVideoUrl(String videoId) {
+        String url = String.format("https://www.youtube.com/embed/%s", videoId);
         return Uri.parse(url);
     }
 
@@ -171,6 +182,9 @@ public class Utils {
                 );
     }
 
+    /**
+     * Volume: 0 - 100
+     */
     public static void setGlobalVolume(Context context, int volume) {
         if (context != null) {
             AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -179,6 +193,23 @@ public class Utils {
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (int) Math.ceil(streamMaxVolume / 100f * volume), 0);
             }
         }
+    }
+
+    /**
+     * Volume: 0 - 100
+     */
+    public static int getGlobalVolume(Context context) {
+        if (context != null) {
+            AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null) {
+                int streamMaxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                int streamVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+                return (int) Math.ceil(streamVolume / (streamMaxVolume / 100f));
+            }
+        }
+
+        return 100;
     }
 
     /**
@@ -197,6 +228,11 @@ public class Utils {
         }
     }
 
+    /**
+     * Need to be the first line and executed on earliest stage once.<br/>
+     * Inits media service language and context.<br/>
+     * NOTE: this command should run before using any of the media service api.
+     */
     public static void initGlobalData(Context context) {
         Log.d(TAG, "initGlobalData called...");
 
@@ -214,7 +250,9 @@ public class Utils {
     public static void openLink(Context context, String url) {
         try {
             openLinkInTabs(context, url);
-        } catch (SecurityException e) { // Permission Denial on Android 9
+        } catch (Exception e) {
+            // Permission Denial on Android 9 (SecurityException)
+            // Chrome Tabs not found (ActivityNotFoundException)
             Helpers.openLink(context, url); // revert to simple in-browser page
         }
     }

@@ -3,6 +3,7 @@ package com.liskovsoft.smartyoutubetv2.common.app.models.data;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,9 +15,19 @@ public class VideoGroup {
     private List<Video> mVideos;
     private MediaGroup mMediaGroup;
     private Category mCategory;
+    private int mPosition;
+    private boolean mIsNew;
 
     public static VideoGroup from(Category category) {
         return from(null, category);
+    }
+
+    public static VideoGroup from(Category category, boolean isNew) {
+        return from(null, category, -1, isNew);
+    }
+
+    public static VideoGroup from(Category category, int groupPosition, boolean isNew) {
+        return from(null, category, groupPosition, isNew);
     }
 
     public static VideoGroup from(MediaGroup mediaGroup) {
@@ -24,8 +35,22 @@ public class VideoGroup {
     }
 
     public static VideoGroup from(MediaGroup mediaGroup, Category category) {
+        return from(mediaGroup, category, -1);
+    }
+
+    public static VideoGroup from(MediaGroup mediaGroup, Category category, boolean isNew) {
+        return from(mediaGroup, category, -1, isNew);
+    }
+
+    public static VideoGroup from(MediaGroup mediaGroup, Category category, int groupPosition) {
+        return from(mediaGroup, category, groupPosition, false);
+    }
+
+    public static VideoGroup from(MediaGroup mediaGroup, Category category, int groupPosition, boolean isNew) {
         VideoGroup videoGroup = new VideoGroup();
         videoGroup.mCategory = category;
+        videoGroup.mPosition = groupPosition;
+        videoGroup.mIsNew = isNew;
 
         if (mediaGroup == null) {
             return videoGroup;
@@ -43,7 +68,11 @@ public class VideoGroup {
         }
 
         for (MediaItem item : mediaGroup.getMediaItems()) {
-            videoGroup.mVideos.add(Video.from(item));
+            Video video = Video.from(item);
+            // Group position in multi-grid fragments
+            video.groupPosition = videoGroup.mPosition;
+            video.group = videoGroup;
+            videoGroup.mVideos.add(video);
         }
 
         return videoGroup;
@@ -70,6 +99,18 @@ public class VideoGroup {
     }
 
     public boolean isEmpty() {
-        return mVideos == null;
+        return mVideos == null || mVideos.isEmpty();
+    }
+
+    /**
+     * Group position in multi-grid fragments<br/>
+     * It isn't used on other types of fragments.
+     */
+    public int getPosition() {
+        return mPosition;
+    }
+
+    public boolean isNew() {
+        return mIsNew;
     }
 }

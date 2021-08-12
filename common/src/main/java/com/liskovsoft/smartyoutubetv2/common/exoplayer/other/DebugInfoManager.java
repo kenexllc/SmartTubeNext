@@ -2,7 +2,10 @@ package com.liskovsoft.smartyoutubetv2.common.exoplayer.other;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.graphics.Point;
+import android.os.Build.VERSION;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -51,7 +54,7 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
     private final ViewGroup mDebugViewGroup;
     private final Activity mContext;
 
-    private boolean started;
+    private boolean mStarted;
     private LinearLayout column1;
     private LinearLayout column2;
     private UhdHelper mUhdHelper;
@@ -61,15 +64,15 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
     private final String mAppVersion;
 
     /**
+     * @param activity context
      * @param player   The {@link SimpleExoPlayer} from which debug information should be obtained.
      * @param resLayoutId The {@link TextView} that should be updated to display the information.
-     * @param ctx context
      */
-    public DebugInfoManager(SimpleExoPlayer player, int resLayoutId, Activity ctx) {
+    public DebugInfoManager(Activity activity, SimpleExoPlayer player, int resLayoutId) {
         mPlayer = player;
-        mDebugViewGroup = ctx.findViewById(resLayoutId);
-        mContext = ctx;
-        mTextSize = ctx.getResources().getDimension(R.dimen.debug_text_size);
+        mDebugViewGroup = activity.findViewById(resLayoutId);
+        mContext = activity;
+        mTextSize = activity.getResources().getDimension(R.dimen.debug_text_size);
         mAppVersion = String.format("%s Version", mContext.getString(R.string.app_name));
         inflate();
     }
@@ -90,16 +93,20 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         }
     }
 
+    public boolean isShown() {
+        return mStarted;
+    }
+
     /**
      * Starts periodic updates of the {@link TextView}. Must be called from the application's main
      * thread.
      */
     private void create() {
-        if (started) {
+        if (mStarted) {
             return;
         }
 
-        started = true;
+        mStarted = true;
         mDebugViewGroup.setVisibility(View.VISIBLE);
         mUhdHelper = new UhdHelper(mContext);
         mPlayer.addListener(this);
@@ -111,11 +118,11 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
      * thread.
      */
     private void destroy() {
-        if (!started) {
+        if (!mStarted) {
             return;
         }
 
-        started = false;
+        mStarted = false;
         mDebugViewGroup.setVisibility(View.GONE);
         mPlayer.removeListener(this);
         mDebugViewGroup.removeCallbacks(this);
@@ -183,11 +190,11 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         appendVideoInfo();
         appendRuntimeInfo();
         appendPlayerState();
-        appendDisplayModeId();
         appendDisplayInfo();
+        appendDisplayModeId();
         //appendPlayerWindowIndex();
         appendVersion();
-        appendDeviceName();
+        appendDeviceNameAndSDK();
 
         // Schedule next update
         mDebugViewGroup.removeCallbacks(this);
@@ -230,10 +237,11 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
                 toHumanReadable(video.bitrate),
                 toHumanReadable(audio.bitrate)
         )));
-        String par = video.pixelWidthHeightRatio == Format.NO_VALUE ||
-                video.pixelWidthHeightRatio == 1f ?
-                DEFAULT : String.format(Locale.US, "%.02f", video.pixelWidthHeightRatio);
-        mVideoInfo.add(new Pair<>("Aspect Ratio", par));
+        // Aspect info is not valid since we're using custom views
+        //String par = video.pixelWidthHeightRatio == Format.NO_VALUE ||
+        //        video.pixelWidthHeightRatio == 1f ?
+        //        DEFAULT : String.format(Locale.US, "%.02f", video.pixelWidthHeightRatio);
+        //mVideoInfo.add(new Pair<>("Aspect Ratio", par));
         String videoCodecName = getVideoDecoderNameV2();
         mVideoInfo.add(new Pair<>("Video Decoder Name", videoCodecName));
         mVideoInfo.add(new Pair<>("Hardware Accelerated", String.valueOf(isHardwareAccelerated(videoCodecName))));
@@ -302,10 +310,19 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         mDisplayModeId.clear();
 
         Mode currentMode = mUhdHelper.getCurrentMode();
-        mDisplayModeId.add(new Pair<>("Display Mode ID", currentMode != null ? String.valueOf(currentMode.getModeId()) : NOT_AVAILABLE));
-
         Mode[] supportedModes = mUhdHelper.getSupportedModes();
-        mDisplayModeId.add(new Pair<>("Display Modes Length", supportedModes != null ? String.valueOf(supportedModes.length) : NOT_AVAILABLE));
+
+        if (currentMode != null && supportedModes != null && supportedModes.length > 1) { // AFR is supported (more than one display mode).
+            String bootResolution = AppPrefs.instance(mContext).getBootResolution();
+            String currentResolution = UhdHelper.toResolution(currentMode);
+            currentResolution = currentResolution != null ? currentResolution : bootResolution;
+
+            mDisplayModeId.add(new Pair<>("Current Resolution", currentResolution));
+            mDisplayModeId.add(new Pair<>("Boot Resolution", bootResolution != null ? bootResolution : NOT_AVAILABLE));
+
+            mDisplayModeId.add(new Pair<>("Display Mode ID", String.valueOf(currentMode.getModeId())));
+            mDisplayModeId.add(new Pair<>("Display Modes Length", String.valueOf(supportedModes.length)));
+        }
     }
 
     private void appendDisplayInfo() {
@@ -317,13 +334,7 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
     private void updateDisplayInfo() {
         mDisplayInfo.clear();
 
-        String defaultMode = AppPrefs.instance(mContext).getDefaultDisplayMode();
-        defaultMode = defaultMode != null ? defaultMode : NOT_AVAILABLE;
-        String currentMode = UhdHelper.formatMode(mUhdHelper.getCurrentMode());
-        currentMode = currentMode != null ? currentMode : defaultMode;
         mDisplayInfo.add(new Pair<>("Display dpi", String.valueOf(Helpers.getDeviceDpi(mContext))));
-        mDisplayInfo.add(new Pair<>("Display Resolution", currentMode));
-        mDisplayInfo.add(new Pair<>("Default Resolution", defaultMode));
     }
 
     private void appendPlayerWindowIndex() {
@@ -335,8 +346,9 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         appendRow(mAppVersion, AppInfoHelpers.getAppVersionName(mContext));
     }
 
-    private void appendDeviceName() {
+    private void appendDeviceNameAndSDK() {
         appendRow("Device Name", Helpers.getDeviceName());
+        appendRow("Android SDK", VERSION.SDK_INT);
     }
 
     private void appendRow(String name, boolean val) {
@@ -430,5 +442,26 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
 
     private String getVideoDecoderNameV2() {
         return ExoUtils.getVideoDecoderName();
+    }
+
+    private String getRawDisplayResolution() {
+        Display display = mContext.getWindowManager().getDefaultDisplay();
+        Point size = new Point();
+        display.getRealSize(size);
+        float refreshRate = display.getRefreshRate();
+
+        return String.format("%sx%s@%s", size.x, size.y, refreshRate);
+    }
+
+    /**
+     * Override to hardcoded physical resolution
+     */
+    private String overrideResolution(String resolution) {
+        switch (Helpers.getDeviceName()) {
+            case "BRAVIA 4K UR3 (BRAVIA_UR3_EU)":
+                return "3840x2160@120";
+        }
+
+        return resolution;
     }
 }

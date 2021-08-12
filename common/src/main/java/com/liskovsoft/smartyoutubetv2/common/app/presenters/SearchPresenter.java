@@ -9,10 +9,12 @@ import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoMenuPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGroupPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.views.SearchView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.SearchData;
+import com.liskovsoft.smartyoutubetv2.common.utils.RxUtils;
 import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.Disposable;
@@ -50,29 +52,19 @@ public class SearchPresenter extends BasePresenter<SearchView> implements VideoG
 
     @Override
     public void onViewDestroyed() {
+        super.onViewDestroyed();
         disposeActions();
-    }
-
-    private void disposeActions() {
-        if (mScrollAction != null && !mScrollAction.isDisposed()) {
-            mScrollAction.dispose();
-        }
-
-        if (mLoadAction != null && !mLoadAction.isDisposed()) {
-            mLoadAction.dispose();
-        }
     }
 
     @Override
     public void onViewInitialized() {
-        loadSuggestedKeywords();
-
         startSearchInt(mSearchText);
         mSearchText = null;
     }
 
-    private void loadSuggestedKeywords() {
-        // TODO: not implemented
+    @Override
+    public void onVideoItemSelected(Video item) {
+        // NOP
     }
 
     @Override
@@ -101,11 +93,23 @@ public class SearchPresenter extends BasePresenter<SearchView> implements VideoG
         }
     }
 
+    @Override
+    public boolean hasPendingActions() {
+        return RxUtils.isAnyActionRunning(mLoadAction, mScrollAction);
+    }
+
     public void onSearch(String searchText) {
-         loadSearchResult(searchText);
+        if (getView() == null) {
+            Log.e(TAG, "Search view has been unloaded from the memory. Low RAM?");
+            startSearch(searchText);
+            return;
+        }
+
+        loadSearchResult(searchText);
     }
     
     private void loadSearchResult(String searchText) {
+        disposeActions();
         getView().showProgressBar(true);
 
         MediaGroupManager mediaGroupManager = mMediaService.getMediaGroupManager();
@@ -123,6 +127,10 @@ public class SearchPresenter extends BasePresenter<SearchView> implements VideoG
     }
     
     private void continueGroup(VideoGroup group) {
+        if (RxUtils.isAnyActionRunning(mScrollAction)) {
+            return;
+        }
+
         Log.d(TAG, "continueGroup: start continue group: " + group.getTitle());
 
         getView().showProgressBar(true);
@@ -142,14 +150,17 @@ public class SearchPresenter extends BasePresenter<SearchView> implements VideoG
     }
 
     @Override
-    public void onScrollEnd(VideoGroup group) {
+    public void onScrollEnd(Video item) {
+        if (item == null) {
+            Log.e(TAG, "Can't scroll. Video is null.");
+            return;
+        }
+
+        VideoGroup group = item.group;
+
         Log.d(TAG, "onScrollEnd: Group title: " + group.getTitle());
 
-        boolean updateInProgress = mScrollAction != null && !mScrollAction.isDisposed();
-
-        if (!updateInProgress) {
-            continueGroup(group);
-        }
+        continueGroup(group);
     }
 
     public void startSearch(String searchText) {
@@ -169,5 +180,9 @@ public class SearchPresenter extends BasePresenter<SearchView> implements VideoG
         } else {
             getView().startSearch(searchText);
         }
+    }
+
+    private void disposeActions() {
+        RxUtils.disposeActions(mLoadAction, mScrollAction);
     }
 }

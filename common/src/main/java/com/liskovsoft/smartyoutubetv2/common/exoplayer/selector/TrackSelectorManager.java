@@ -1,5 +1,7 @@
 package com.liskovsoft.smartyoutubetv2.common.exoplayer.selector;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Pair;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.source.TrackGroup;
@@ -11,9 +13,10 @@ import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedT
 import com.google.android.exoplayer2.trackselection.TrackSelection.Definition;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.MediaTrack;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.versions.selector.RestoreTrackSelector;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.versions.selector.RestoreTrackSelector.TrackSelectorCallback;
-import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.MediaTrack;
+import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -21,6 +24,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 public class TrackSelectorManager implements TrackSelectorCallback {
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     public static final int RENDERER_INDEX_VIDEO = 0;
     public static final int RENDERER_INDEX_AUDIO = 1;
     public static final int RENDERER_INDEX_SUBTITLE = 2;
@@ -33,6 +37,7 @@ public class TrackSelectorManager implements TrackSelectorCallback {
 
     private final Renderer[] mRenderers = new Renderer[3];
     private final MediaTrack[] mSelectedTracks = new MediaTrack[3];
+    private long mTracksInitTimeMs;
 
     public void invalidate() {
         Arrays.fill(mRenderers, null);
@@ -182,6 +187,8 @@ public class TrackSelectorManager implements TrackSelectorCallback {
             noSubsTrack.isSelected = true;
             renderer.selectedTrack = noSubsTrack;
         }
+
+        mTracksInitTimeMs = System.currentTimeMillis();
     }
 
     /**
@@ -426,14 +433,14 @@ public class TrackSelectorManager implements TrackSelectorCallback {
         invalidate();
     }
 
-    private MediaTrack findBestMatch(MediaTrack track) {
-        Log.d(TAG, "findBestMatch: Starting: " + track.format);
+    private MediaTrack findBestMatch(MediaTrack originTrack) {
+        Log.d(TAG, "findBestMatch: Starting: " + originTrack.format);
 
-        Renderer renderer = mRenderers[track.rendererIndex];
+        Renderer renderer = mRenderers[originTrack.rendererIndex];
 
-        MediaTrack result = createAutoSelection(track.rendererIndex);
+        MediaTrack result = createAutoSelection(originTrack.rendererIndex);
 
-        if (track.format != null) { // not auto selection
+        if (originTrack.format != null) { // not auto selection
             MediaTrack prevResult;
 
             for (int groupIndex = 0; groupIndex < renderer.mediaTracks.length; groupIndex++) {
@@ -452,20 +459,45 @@ public class TrackSelectorManager implements TrackSelectorCallback {
                         continue;
                     }
 
-                    int compare = track.inBounds(mediaTrack);
+                    int compare = originTrack.inBounds(mediaTrack);
 
                     if (compare == 0) {
-                        Log.d(TAG, "findBestMatch: Found exact match in this track list: " + mediaTrack.format);
-                        result = mediaTrack;
-                        break;
-                    } else if (compare > 0 && mediaTrack.compare(result) >= 0) { // select track with higher possible quality
-                        result = mediaTrack;
+                        Log.d(TAG, "findBestMatch: Found exact match by size and fps in list: " + mediaTrack.format);
+
+                        // Get ready for group with multiple codecs: avc, av01
+                        if (MediaTrack.codecEquals(mediaTrack, originTrack)) {
+                            result = mediaTrack;
+                            break;
+                        } else if (!MediaTrack.codecEquals(result, originTrack) && !MediaTrack.preferByCodec(result, mediaTrack)) {
+                            result = mediaTrack;
+                        }
+                    } else if (compare > 0 &&
+                            (mediaTrack.compare(result) >= 0 ||              // Select track with higher possible quality
+                            MediaTrack.preferByCodec(mediaTrack, result))) { // Or prefer codec
+                        // Get ready for group with multiple codecs: avc, av01
+                        // Also handle situations where avc and av01 only (no vp9). E.g.: B4mIhE_15nc
+                        if (MediaTrack.codecEquals(mediaTrack, originTrack)) {
+                            result = mediaTrack;
+                        } else if (!MediaTrack.codecEquals(result, originTrack) && !MediaTrack.preferByCodec(result, mediaTrack)) {
+                            result = mediaTrack;
+                        }
                     }
                 }
 
-                if (prevResult.compare(result) == 0) {
-                    // Prefer the same codec if quality match
-                    if (prevResult.format != null && MediaTrack.codecEquals(prevResult.format.codecs, track.format.codecs)) {
+                // Don't let change the codec beside needed one.
+                // Handle situation where same codecs in different groups (e.g. subtitles).
+                if (MediaTrack.codecEquals(result, originTrack)) {
+                    if (originTrack.compare(result) == 0) { // Exact match found
+                        break;
+                    }
+
+                    if (MediaTrack.codecEquals(prevResult, originTrack) && prevResult.compare(result) > 0) {
+                        result = prevResult;
+                    }
+                } else if (MediaTrack.codecEquals(prevResult, originTrack)) {
+                    result = prevResult;
+                } else if (prevResult.compare(result) == 0) { // Formats are the same except the codecs
+                    if (MediaTrack.preferByCodec(prevResult, result)) {
                         result = prevResult;
                     }
                 }
@@ -594,8 +626,8 @@ public class TrackSelectorManager implements TrackSelectorCallback {
                 return format1.language.compareTo(format2.language);
             }
 
-            int leftVal = format2.width + (int) format2.frameRate + (format2.codecs != null && format2.codecs.contains("avc") ? 31 : 0);
-            int rightVal = format1.width + (int) format1.frameRate + (format1.codecs != null && format1.codecs.contains("avc") ? 31 : 0);
+            int leftVal = format2.width + (int) format2.frameRate + MediaTrack.getCodecWeight(format2.codecs);
+            int rightVal = format1.width + (int) format1.frameRate + MediaTrack.getCodecWeight(format1.codecs);
 
             int delta = leftVal - rightVal;
             if (delta == 0) {

@@ -12,7 +12,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.PlayerEventList
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.SuggestionsLoader.MetadataListener;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionItem;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem;
-import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppSettingsPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.prefs.ContentBlockData;
 import com.liskovsoft.smartyoutubetv2.common.utils.RxUtils;
 import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 public class ContentBlockManager extends PlayerEventListenerHelper implements MetadataListener {
     private static final String TAG = ContentBlockManager.class.getSimpleName();
+    private static final long SEGMENT_CHECK_DURATION_MS = 1_000;
     private MediaItemManager mMediaItemManager;
     private ContentBlockData mContentBlockData;
     private Video mVideo;
@@ -102,9 +103,10 @@ public class ContentBlockManager extends PlayerEventListenerHelper implements Me
     }
 
     private void startPlaybackWatcher() {
+        // Warn. Try to not access player object here.
+        // Or you'll get "Player is accessed on the wrong thread" error.
         Observable<Long> playbackProgressObservable =
-                Observable.interval(1, TimeUnit.SECONDS)
-                        .map((val) -> getController().getPositionMs());
+                Observable.interval(1, TimeUnit.SECONDS);
 
         mProgressAction = playbackProgressObservable
                 .subscribeOn(Schedulers.newThread())
@@ -121,15 +123,18 @@ public class ContentBlockManager extends PlayerEventListenerHelper implements Me
         mVideo = null;
     }
 
-    private void skipSegment(long positionMs) {
+    private void skipSegment(long interval) {
         if (mSponsorSegments == null || !Video.equals(mVideo, getController().getVideo())) {
             return;
         }
 
         boolean isSegmentFound = false;
+        SponsorSegment foundSegment = null;
 
         for (SponsorSegment segment : mSponsorSegments) {
-            if (positionMs >= segment.getStartMs() && positionMs < segment.getEndMs()) {
+            if (isPositionAtSegmentStart(getController().getPositionMs(), segment)) {
+                isSegmentFound = true;
+                foundSegment = segment;
                 Integer resId = mLocalizedMapping.get(segment.getCategory());
                 String localizedCategory = resId != null ? getActivity().getString(resId) : segment.getCategory();
 
@@ -143,12 +148,26 @@ public class ContentBlockManager extends PlayerEventListenerHelper implements Me
                     confirmSkip(segment.getEndMs(), localizedCategory);
                 }
 
-                isSegmentFound = true;
                 break;
             }
         }
 
+        // Skip each segment only once
+        if (foundSegment != null) {
+            mSponsorSegments.remove(foundSegment);
+        }
+
         mIsSameSegment = isSegmentFound;
+    }
+
+    private boolean isPositionAtSegmentStart(long positionMs, SponsorSegment segment) {
+        // Note. Getting into account playback speed. Also check that the zone is long enough.
+        float checkEndMs = segment.getStartMs() + SEGMENT_CHECK_DURATION_MS * getController().getSpeed();
+        return positionMs >= segment.getStartMs() && positionMs <= checkEndMs && checkEndMs <= segment.getEndMs();
+    }
+
+    private boolean isPositionInsideSegment(long positionMs, SponsorSegment segment) {
+        return positionMs >= segment.getStartMs() && positionMs < segment.getEndMs();
     }
 
     private void messageSkip(long skipPositionMs, String category) {
@@ -161,7 +180,7 @@ public class ContentBlockManager extends PlayerEventListenerHelper implements Me
             return;
         }
 
-        AppSettingsPresenter settingsPresenter = AppSettingsPresenter.instance(getActivity());
+        AppDialogPresenter settingsPresenter = AppDialogPresenter.instance(getActivity());
         settingsPresenter.clear();
 
         OptionItem sponsorBlockOption = UiOptionItem.from(
@@ -173,7 +192,7 @@ public class ContentBlockManager extends PlayerEventListenerHelper implements Me
         );
 
         settingsPresenter.appendSingleButton(sponsorBlockOption);
-        settingsPresenter.setTimoutMs(skipPositionMs - getController().getPositionMs());
+        settingsPresenter.setCloseTimeoutMs(skipPositionMs - getController().getPositionMs());
 
         settingsPresenter.showDialog(ContentBlockData.SPONSOR_BLOCK_NAME);
     }

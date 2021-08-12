@@ -12,9 +12,8 @@ public class AppPrefs extends SharedPreferencesBase {
     private static final String COMPLETED_ONBOARDING = "completed_onboarding";
     private static final String BACKUP_DATA = "backup_data";
     private static final String STATE_UPDATER_DATA = "state_updater_data";
-    private static final String PREFERRED_LANGUAGE_DATA = "preferred_language_data";
     private static final String VIEW_MANAGER_DATA = "view_manager_data";
-    private String mDefaultDisplayMode;
+    private String mBootResolution;
 
     private AppPrefs(Context context) {
         super(context, R.xml.app_prefs);
@@ -36,12 +35,12 @@ public class AppPrefs extends SharedPreferencesBase {
         return getBoolean(COMPLETED_ONBOARDING, false);
     }
 
-    public void setDefaultDisplayMode(String mode) {
-        mDefaultDisplayMode = mode;
+    public void setBootResolution(String resolution) {
+        mBootResolution = resolution;
     }
 
-    public String getDefaultDisplayMode() {
-        return mDefaultDisplayMode;
+    public String getBootResolution() {
+        return mBootResolution;
     }
 
     public void setBackupData(String backupData) {
@@ -60,27 +59,27 @@ public class AppPrefs extends SharedPreferencesBase {
         putString(STATE_UPDATER_DATA, data);
     }
 
-    public void setPreferredLanguage(String langData) {
-        putString(PREFERRED_LANGUAGE_DATA, langData);
-    }
-
-    public String getPreferredLanguage() {
-        return getString(PREFERRED_LANGUAGE_DATA, null);
-    }
-
-    public void setViewManagerData(String data) {
-        putString(VIEW_MANAGER_DATA, data);
-    }
-
-    public String getViewManagerData() {
-        return getString(VIEW_MANAGER_DATA, null);
-    }
-
     public void setData(String key, String data) {
         putString(key, data);
     }
 
     public String getData(String key) {
         return getString(key, null);
+    }
+
+    public String getWebProxyUri() {
+        return null;
+    }
+
+    public void setWebProxyUri(String uri) {
+        
+    }
+
+    public boolean getWebProxyEnabled() {
+        return false;
+    }
+
+    public void setWebProxyEnabled(boolean enabled) {
+        
     }
 }
