@@ -12,13 +12,13 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.BrowsePresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGroupPresenter;
-import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.common.misc.TickleManager;
+import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.tv.R;
 import com.liskovsoft.smartyoutubetv2.tv.adapter.VideoGroupObjectAdapter;
-import com.liskovsoft.smartyoutubetv2.tv.presenter.VideoCardPresenter;
 import com.liskovsoft.smartyoutubetv2.tv.presenter.CustomVerticalGridPresenter;
-import com.liskovsoft.smartyoutubetv2.tv.presenter.base.OnItemViewPressedListener;
+import com.liskovsoft.smartyoutubetv2.tv.presenter.VideoCardPresenter;
+import com.liskovsoft.smartyoutubetv2.tv.presenter.base.OnItemLongPressedListener;
 import com.liskovsoft.smartyoutubetv2.tv.ui.browse.interfaces.VideoCategoryFragment;
 import com.liskovsoft.smartyoutubetv2.tv.ui.common.LeanbackActivity;
 import com.liskovsoft.smartyoutubetv2.tv.ui.common.UriBackgroundManager;
@@ -64,8 +64,7 @@ public class VideoGridFragment extends GridFragment implements VideoCategoryFrag
     private void setupEventListeners() {
         setOnItemViewClickedListener(new ItemViewClickedListener());
         setOnItemViewSelectedListener(new ItemViewSelectedListener());
-        mCardPresenter.setOnItemViewLongPressedListener(new ItemViewLongClickedListener());
-        mCardPresenter.setOnItemViewMenuPressedListener(new ItemViewLongClickedListener());
+        mCardPresenter.setOnItemViewLongPressedListener(new ItemViewLongPressedListener());
     }
 
     private void applyPendingUpdates() {
@@ -116,8 +115,19 @@ public class VideoGridFragment extends GridFragment implements VideoCategoryFrag
             return;
         }
 
-        if (group.isNew()) {
+        int action = group.getAction();
+
+        if (action == VideoGroup.ACTION_REPLACE) {
             clear();
+        } else if (action == VideoGroup.ACTION_REMOVE) {
+            mGridAdapter.remove(group);
+            return;
+        } else if (action == VideoGroup.ACTION_REMOVE_AUTHOR) {
+            mGridAdapter.removeAuthor(group);
+            return;
+        } else if (action == VideoGroup.ACTION_SYNC) {
+            mGridAdapter.sync(group);
+            return;
         }
 
         if (group.isEmpty()) {
@@ -158,9 +168,9 @@ public class VideoGridFragment extends GridFragment implements VideoCategoryFrag
         return mGridAdapter.size() == 0;
     }
 
-    private final class ItemViewLongClickedListener implements OnItemViewPressedListener {
+    private final class ItemViewLongPressedListener implements OnItemLongPressedListener {
         @Override
-        public void onItemPressed(Presenter.ViewHolder itemViewHolder, Object item) {
+        public void onItemLongPressed(Presenter.ViewHolder itemViewHolder, Object item) {
             if (item instanceof Video) {
                 mMainPresenter.onVideoItemLongClicked((Video) item);
             } else {

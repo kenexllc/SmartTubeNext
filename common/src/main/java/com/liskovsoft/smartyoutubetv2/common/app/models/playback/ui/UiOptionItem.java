@@ -13,7 +13,8 @@ public class UiOptionItem implements OptionItem {
     private FormatItem mFormat;
     private OptionCallback mCallback;
     private Object mData;
-    private OptionItem[] mCheckedRules;
+    private OptionItem[] mRequiredItems;
+    private OptionItem[] mRadioItems;
 
     public static List<OptionItem> from(List<FormatItem> formats, OptionCallback callback) {
         return from(formats, callback, null);
@@ -52,18 +53,27 @@ public class UiOptionItem implements OptionItem {
         return uiOptionItem;
     }
 
-    public static OptionItem from(String title, OptionCallback callback) {
+    public static OptionItem from(CharSequence title, OptionCallback callback) {
         return from(title, callback, false);
     }
 
-    public static OptionItem from(String title, OptionCallback callback, boolean isChecked) {
+    public static OptionItem from(CharSequence title, OptionCallback callback, boolean isChecked) {
         return from(title, callback, isChecked, null);
     }
 
-    public static OptionItem from(String title, OptionCallback callback, boolean isChecked, Object data) {
+    public static OptionItem from(CharSequence title, CharSequence description, OptionCallback callback, boolean isChecked) {
+        return from(title, description, callback, isChecked, null);
+    }
+
+    public static OptionItem from(CharSequence title, OptionCallback callback, boolean isChecked, Object data) {
+        return from(title, null, callback, isChecked, data);
+    }
+
+    public static OptionItem from(CharSequence title, CharSequence description, OptionCallback callback, boolean isChecked, Object data) {
         UiOptionItem uiOptionItem = new UiOptionItem();
 
         uiOptionItem.mTitle = title;
+        uiOptionItem.mDescription = description;
         uiOptionItem.mIsSelected = isChecked;
         uiOptionItem.mCallback = callback;
         uiOptionItem.mData = data;
@@ -114,16 +124,30 @@ public class UiOptionItem implements OptionItem {
     }
 
     @Override
-    public void setRequire(OptionItem... rules) {
-        if (rules == null || rules.length == 0) {
-            mCheckedRules = null;
+    public void setRequired(OptionItem... items) {
+        if (items == null || items.length == 0) {
+            mRequiredItems = null;
         }
 
-        mCheckedRules = rules;
+        mRequiredItems = items;
     }
 
     @Override
-    public OptionItem[] getRequire() {
-        return mCheckedRules;
+    public OptionItem[] getRequired() {
+        return mRequiredItems;
+    }
+
+    @Override
+    public void setRadio(OptionItem... items) {
+        if (items == null || items.length == 0) {
+            mRadioItems = null;
+        }
+
+        mRadioItems = items;
+    }
+
+    @Override
+    public OptionItem[] getRadio() {
+        return mRadioItems;
     }
 }

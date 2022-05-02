@@ -4,9 +4,9 @@ import android.content.Context;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 
 public class AmazonBridgePresenter extends BridgePresenter {
-    private static final int AMAZON_YOUTUBE_PKG_HASH = 1430778939;
+    private static final Integer[] AMAZON_YOUTUBE_PKG_HASH = {1430778939};
     private static final String AMAZON_YOUTUBE_PKG_NAME = "com.amazon.firetv.youtube";
-    private static final String AMAZON_BRIDGE_PKG_URL = "https://github.com/yuliskov/SmartYouTubeTV/releases/download/stable/Amazon_SYTV_Bridge.apk";
+    private static final String AMAZON_BRIDGE_PKG_URL = "https://github.com/yuliskov/SmartTubeNext/releases/download/latest/Amazon_SYTV_Bridge.apk";
     private static AmazonBridgePresenter sInstance;
 
     public AmazonBridgePresenter(Context context) {
@@ -23,7 +23,7 @@ public class AmazonBridgePresenter extends BridgePresenter {
         return sInstance;
     }
 
-    public static void unhold() {
+    public void unhold() {
         sInstance = null;
     }
 
@@ -38,7 +38,7 @@ public class AmazonBridgePresenter extends BridgePresenter {
     }
 
     @Override
-    protected int getPackageSignatureHash() {
+    protected Integer[] getPackageSignatureHash() {
         return AMAZON_YOUTUBE_PKG_HASH;
     }
 

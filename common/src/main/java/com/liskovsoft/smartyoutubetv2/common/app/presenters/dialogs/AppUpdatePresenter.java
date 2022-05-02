@@ -11,6 +11,8 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.SplashPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
+import com.liskovsoft.smartyoutubetv2.common.utils.LoadingManager;
+import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +23,6 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
     private final AppUpdateChecker mUpdateChecker;
     private final AppDialogPresenter mSettingsPresenter;
     private final String[] mUpdateManifestUrls;
-    private boolean mUpdateInstalled;
     private boolean mIsForceCheck;
 
     public AppUpdatePresenter(Context context) {
@@ -47,9 +48,9 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
 
     public void start(boolean forceCheck) {
         mIsForceCheck = forceCheck;
-        mUpdateInstalled = false;
 
         if (forceCheck) {
+            LoadingManager.showLoading(getContext(), true);
             mUpdateChecker.forceCheckForUpdates(mUpdateManifestUrls);
         } else {
             mUpdateChecker.checkForUpdates(mUpdateManifestUrls);
@@ -58,9 +59,29 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
 
     @Override
     public void onUpdateFound(String versionName, List<String> changelog, String apkPath) {
-        if (getContext() != null) {
+        if (mIsForceCheck) {
+            LoadingManager.showLoading(getContext(), false);
+        }
+
+        // Don't show update dialog if player opened
+        if (getContext() != null && !Utils.isPlayerInForeground(getContext()) && Utils.isAppInForeground()) {
             showUpdateDialog(versionName, changelog, apkPath);
         }
+    }
+
+    @Override
+    public void onUpdateError(Exception error) {
+        if (mIsForceCheck) {
+            LoadingManager.showLoading(getContext(), false);
+
+            if (AppUpdateCheckerListener.LATEST_VERSION.equals(error.getMessage())) {
+                MessageHelpers.showMessage(getContext(), R.string.update_not_found);
+            } else {
+                MessageHelpers.showMessage(getContext(), R.string.update_error);
+            }
+        }
+
+        onDone();
     }
 
     private void showUpdateDialog(String versionName, List<String> changelog, String apkPath) {
@@ -71,12 +92,6 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
                 UiOptionItem.from(getContext().getString(R.string.install_update), optionItem -> {
                     mUpdateChecker.installUpdate();
                     SplashPresenter.instance(getContext()).saveBackupData();
-                    mUpdateInstalled = true;
-
-                    // Close the app before install
-                    // Don't go well. Users think that app is crashing.
-                    //mSettingsPresenter.closeDialog();
-                    //ViewManager.instance(getContext()).properlyFinishTheApp(getContext());
                 }, false));
         mSettingsPresenter.appendSingleSwitch(UiOptionItem.from(getContext().getString(R.string.show_again), optionItem -> {
             mUpdateChecker.enableUpdateCheck(optionItem.isSelected());
@@ -93,16 +108,5 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
         }
 
         return options;
-    }
-
-    @Override
-    public void onError(Exception error) {
-        if (mIsForceCheck) {
-            if (AppUpdateCheckerListener.LATEST_VERSION.equals(error.getMessage())) {
-                MessageHelpers.showMessage(getContext(), R.string.update_not_found);
-            } else {
-                MessageHelpers.showMessage(getContext(), R.string.update_in_progess);
-            }
-        }
     }
 }

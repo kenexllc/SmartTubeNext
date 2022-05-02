@@ -25,7 +25,7 @@ public abstract class PlayerEventListenerHelper implements PlayerEventListener {
     public Activity getActivity() {
         return mEventBridge.getActivity();
     }
-
+    
     @Override
     public void onInitDone() {
         // NOP
@@ -139,7 +139,7 @@ public abstract class PlayerEventListenerHelper implements PlayerEventListener {
     }
 
     @Override
-    public void onSeek() {
+    public void onSeekEnd() {
         // NOP
     }
 
@@ -175,12 +175,12 @@ public abstract class PlayerEventListenerHelper implements PlayerEventListener {
     }
 
     @Override
-    public void onThumbsDownClicked(boolean thumbsDown) {
+    public void onDislikeClicked(boolean dislike) {
         // NOP
     }
 
     @Override
-    public void onThumbsUpClicked(boolean thumbsUp) {
+    public void onLikeClicked(boolean like) {
         // NOP
     }
 
@@ -216,6 +216,21 @@ public abstract class PlayerEventListenerHelper implements PlayerEventListener {
 
     @Override
     public void onVideoSpeedClicked() {
+        // NOP
+    }
+
+    @Override
+    public void onSeekIntervalClicked() {
+        // NOP
+    }
+
+    @Override
+    public void onVideoInfoClicked() {
+        // NOP
+    }
+
+    @Override
+    public void onShareLinkClicked() {
         // NOP
     }
 

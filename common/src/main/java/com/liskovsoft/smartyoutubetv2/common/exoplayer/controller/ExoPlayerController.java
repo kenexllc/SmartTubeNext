@@ -1,6 +1,8 @@
 package com.liskovsoft.smartyoutubetv2.common.exoplayer.controller;
 
 import android.content.Context;
+import android.os.Build.VERSION;
+import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.PlaybackParameters;
@@ -11,18 +13,21 @@ import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
-import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.BuildConfig;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.listener.PlayerEventListener;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.FormatItem;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.ExoMediaSourceFactory;
+import com.liskovsoft.smartyoutubetv2.common.exoplayer.errors.TrackErrorFixer;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.ExoFormatItem;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.TrackInfoFormatter2;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.TrackSelectorManager;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.TrackSelectorUtil;
+import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.VideoTrack;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.versions.ExoUtils;
+import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
+import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 
 import java.io.InputStream;
 import java.util.List;
@@ -38,12 +43,26 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     private PlayerEventListener mEventListener;
     private SimpleExoPlayer mPlayer;
     private PlayerView mPlayerView;
+    private float mCurrentSpeed = 1.0f;
 
     public ExoPlayerController(Context context) {
-        mContext = context;
+        mContext = context.getApplicationContext();
         mMediaSourceFactory = ExoMediaSourceFactory.instance(context);
         mTrackSelectorManager = new TrackSelectorManager();
         mTrackFormatter = new TrackInfoFormatter2();
+
+        mMediaSourceFactory.setTrackErrorFixer(new TrackErrorFixer(mTrackSelectorManager));
+
+        // Shield 720p fix???
+        initFormats();
+        VideoTrack.sIsNoFpsPresetsEnabled = PlayerTweaksData.instance(context).isNoFpsPresetsEnabled();
+    }
+
+    private void initFormats() {
+        PlayerData playerData = PlayerData.instance(mContext);
+        mTrackSelectorManager.selectTrack(ExoFormatItem.toMediaTrack(playerData.getFormat(FormatItem.TYPE_VIDEO)));
+        mTrackSelectorManager.selectTrack(ExoFormatItem.toMediaTrack(playerData.getFormat(FormatItem.TYPE_AUDIO)));
+        mTrackSelectorManager.selectTrack(ExoFormatItem.toMediaTrack(playerData.getFormat(FormatItem.TYPE_SUBTITLE)));
     }
 
     @Override
@@ -69,7 +88,6 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
 
     @Override
     public void openUrlList(List<String> urlList) {
-        //String userAgent = Util.getUserAgent(getActivity(), "VideoPlayerGlue");
         MediaSource mediaSource = mMediaSourceFactory.fromUrlList(urlList);
         openMediaSource(mediaSource);
     }
@@ -77,19 +95,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     private void openMediaSource(MediaSource mediaSource) {
         setQualityInfo("");
 
-        if (mPlayer == null) {
-            return;
-        }
-
+        mTrackSelectorManager.invalidate();
+        mOnSourceChanged = true;
+        mEventListener.onSourceChanged(mVideo);
         mPlayer.prepare(mediaSource);
-
-        if (mEventListener != null) {
-            mTrackSelectorManager.invalidate();
-            mOnSourceChanged = true;
-            mEventListener.onSourceChanged(mVideo);
-        } else {
-            MessageHelpers.showMessage(mContext, "Oops. Event listener didn't initialized yet");
-        }
     }
 
     @Override
@@ -101,9 +110,14 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
         return mPlayer.getCurrentPosition();
     }
 
+    /**
+     * NOTE: Pos gathered from content block data may slightly exceed video duration
+     * (e.g. 302200 when duration is 302000).
+     */
     @Override
     public void setPositionMs(long positionMs) {
-        if (positionMs >= 0 && mPlayer != null) {
+        // Url list videos at load stage has undefined (-1) length. So, we need to remove length check.
+        if (mPlayer != null && positionMs >= 0) {
             mPlayer.seekTo(positionMs);
         }
     }
@@ -114,7 +128,8 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
             return -1;
         }
 
-        return mPlayer.getDuration();
+        long duration = mPlayer.getDuration();
+        return duration != C.TIME_UNSET ? duration : -1;
     }
 
     @Override
@@ -187,6 +202,13 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     @Override
     public void setTrackSelector(DefaultTrackSelector trackSelector) {
         mTrackSelectorManager.setTrackSelector(trackSelector);
+
+        if (mContext != null && trackSelector != null && PlayerTweaksData.instance(mContext).isTunneledPlaybackEnabled()) {
+            // Enable tunneling if supported by the current media and device configuration.
+            if (VERSION.SDK_INT >= 21) {
+                trackSelector.setParameters(trackSelector.buildUponParameters().setTunnelingAudioSessionId(C.generateAudioSessionIdV21(mContext)));
+            }
+        }
     }
 
     @Override
@@ -215,11 +237,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     }
 
     @Override
-    public void selectFormat(FormatItem option) {
-        if (option != null) {
-            mTrackSelectorManager.selectTrack(ExoFormatItem.toMediaTrack(option));
-            // TODO: move to the {@link #onTrackChanged()} somehow
-            mEventListener.onTrackSelected(option);
+    public void selectFormat(FormatItem formatItem) {
+        if (formatItem != null) {
+            mEventListener.onTrackSelected(formatItem);
+            mTrackSelectorManager.selectTrack(ExoFormatItem.toMediaTrack(formatItem));
         }
     }
 
@@ -273,7 +294,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
         if (mOnSourceChanged) {
             mOnSourceChanged = false;
             mEventListener.onVideoLoaded(mVideo);
-            mTrackSelectorManager.fixTracksSelection();
+
+            // Produce thread sync problems
+            // Attempt to read from field 'java.util.TreeMap$Node java.util.TreeMap$Node.left' on a null object reference
+            //mTrackSelectorManager.fixTracksSelection();
         }
     }
 
@@ -281,12 +305,14 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     public void onPlayerError(ExoPlaybackException error) {
         Log.e(TAG, "onPlayerError: " + error);
 
-        if (error.type == ExoPlaybackException.TYPE_UNEXPECTED &&
-            error.getCause() instanceof IllegalArgumentException) {
-            // Maybe it's because of auto frame rate.
-            // Such error may occur when pausing activity.
-            return;
-        }
+        // Player is released at this point. So, there is no sense to restore the playback here.
+
+        //if (error.type == ExoPlaybackException.TYPE_UNEXPECTED &&
+        //    error.getCause() instanceof IllegalArgumentException) {
+        //    // Maybe it's because of auto frame rate.
+        //    // Such error may occur when pausing activity.
+        //    return;
+        //}
 
         mEventListener.onEngineError(error.type);
     }
@@ -296,6 +322,10 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
         if (BuildConfig.DEBUG) {
             Log.d(TAG, "onPlayerStateChanged: " + TrackSelectorUtil.stateToString(playbackState));
         }
+
+        //if (Player.STATE_READY == playbackState) {
+        //    notifyOnVideoLoad();
+        //}
 
         boolean isPlayPressed = Player.STATE_READY == playbackState && playWhenReady;
         boolean isPausePressed = Player.STATE_READY == playbackState && !playWhenReady;
@@ -314,9 +344,26 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     }
 
     @Override
+    public void onPositionDiscontinuity(int reason) {
+        Log.e(TAG, "onPositionDiscontinuity");
+
+        // Fix video loop on 480p with legacy codes enabled
+        if (reason == Player.DISCONTINUITY_REASON_PERIOD_TRANSITION) {
+            mPlayer.stop();
+            mEventListener.onPlayEnd();
+        }
+    }
+
+    @Override
+    public void onSeekProcessed() {
+        mEventListener.onSeekEnd();
+    }
+
+    @Override
     public void setSpeed(float speed) {
         if (mPlayer != null && speed > 0) {
-            mPlayer.setPlaybackParameters(new PlaybackParameters(speed, 1.0f));
+            mPlayer.setPlaybackParameters(new PlaybackParameters(speed, mPlayer.getPlaybackParameters().pitch));
+            mCurrentSpeed = speed; // NOTE: backup speed in case params not applied (playback is paused)
 
             mTrackFormatter.setSpeed(speed);
             setQualityInfo(mTrackFormatter.getQualityLabel());
@@ -326,7 +373,8 @@ public class ExoPlayerController implements Player.EventListener, PlayerControll
     @Override
     public float getSpeed() {
         if (mPlayer != null) {
-            return mPlayer.getPlaybackParameters().speed;
+            // NOTE: restore backup speed in case params not applied (playback is paused)
+            return isPlaying() ? mPlayer.getPlaybackParameters().speed : mCurrentSpeed;
         } else {
             return -1;
         }

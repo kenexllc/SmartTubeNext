@@ -33,7 +33,7 @@ import androidx.leanback.widget.Presenter;
 class ControlBarPresenter extends Presenter {
 
     // MOD: increase player's controls number. Origin: 7. Leanback version 1.0.0
-    static final int MAX_CONTROLS = 10;
+    static final int MAX_CONTROLS = 12;
 
     /**
      * The data type expected by this presenter.
@@ -87,6 +87,7 @@ class ControlBarPresenter extends Presenter {
                 throw new IllegalStateException("Couldn't find control_bar");
             }
             mControlBar.setDefaultFocusToMiddle(mDefaultFocusToMiddle);
+            mControlBar.setFocusRecovery(mFocusRecovery);
             mControlBar.setOnChildFocusedListener(new ControlBar.OnChildFocusedListener() {
                 @Override
                 public void onChildFocusedListener(View child, View focused) {
@@ -123,7 +124,11 @@ class ControlBarPresenter extends Presenter {
 
         int getChildMarginFromCenter(Context context, int numControls) {
             // Includes margin between icons plus two times half the icon width.
-            return getChildMarginDefault(context) + getControlIconWidth(context);
+            //return getChildMarginDefault(context) + getControlIconWidth(context);
+
+            // TODO: modified
+            // Decrease margin between player's buttons
+            return getChildMarginDefault(context) + getControlIconWidth(context) / 2;
         }
 
         void showControls(Presenter presenter) {
@@ -191,6 +196,7 @@ class ControlBarPresenter extends Presenter {
     private static int sChildMarginDefault;
     private static int sControlIconWidth;
     boolean mDefaultFocusToMiddle = true;
+    boolean mFocusRecovery = true;
 
     /**
      * Constructor for a ControlBarPresenter.
@@ -295,4 +301,10 @@ class ControlBarPresenter extends Presenter {
         mDefaultFocusToMiddle = defaultFocusToMiddle;
     }
 
+    /**
+     * MOD: enable/disable focus restoration
+     */
+    void setFocusRecovery(boolean focusRecovery) {
+        mFocusRecovery = focusRecovery;
+    }
 }

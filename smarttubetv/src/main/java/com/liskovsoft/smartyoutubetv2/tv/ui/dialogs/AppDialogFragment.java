@@ -2,9 +2,11 @@ package com.liskovsoft.smartyoutubetv2.tv.ui.dialogs;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.leanback.preference.LeanbackPreferenceDialogFragment;
 import androidx.leanback.preference.LeanbackPreferenceFragment;
 import androidx.leanback.preference.LeanbackSettingsFragment;
 import androidx.preference.DialogPreference;
@@ -15,12 +17,13 @@ import androidx.preference.PreferenceScreen;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
-import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter.SettingsCategory;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter.OptionCategory;
 import com.liskovsoft.smartyoutubetv2.common.app.views.AppDialogView;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.smartyoutubetv2.tv.ui.dialogs.other.RadioListPreferenceDialogFragment;
 import com.liskovsoft.smartyoutubetv2.tv.ui.dialogs.other.StringListPreference;
 import com.liskovsoft.smartyoutubetv2.tv.ui.dialogs.other.StringListPreferenceDialogFragment;
+import com.liskovsoft.smartyoutubetv2.tv.util.ViewUtil;
 
 import java.util.List;
 
@@ -29,7 +32,7 @@ public class AppDialogFragment extends LeanbackSettingsFragment
     private static final String TAG = AppDialogFragment.class.getSimpleName();
     private AppPreferenceFragment mPreferenceFragment;
     private AppDialogPresenter mSettingsPresenter;
-    private boolean mIsStateSaved;
+    private boolean mIsTransparent;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -37,6 +40,7 @@ public class AppDialogFragment extends LeanbackSettingsFragment
 
         mSettingsPresenter = AppDialogPresenter.instance(getActivity());
         mSettingsPresenter.setView(this);
+        mIsTransparent = mSettingsPresenter.isTransparent();
     }
 
     @Override
@@ -47,27 +51,26 @@ public class AppDialogFragment extends LeanbackSettingsFragment
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        mIsStateSaved = true;
-    }
-
-    @Override
     public void onPreferenceStartInitialScreen() {
         // FIX: Can not perform this action after onSaveInstanceState
         // Possible fix: Unable to add window -- token android.os.BinderProxy is not valid; is your activity running?
-        if (mIsStateSaved || !Utils.checkActivity(getActivity())) {
+        if (!Utils.checkActivity(getActivity())) {
             return;
         }
 
-        // Fix mSettingsPresenter in null after init stage.
-        // Seems concurrency between dialogs.
-        mSettingsPresenter.setView(this);
+        try {
+            // Fix mSettingsPresenter in null after init stage.
+            // Seems concurrency between dialogs.
+            mSettingsPresenter.setView(this);
 
-        mPreferenceFragment = buildPreferenceFragment();
-        startPreferenceFragment(mPreferenceFragment);
+            mPreferenceFragment = buildPreferenceFragment();
+            mPreferenceFragment.enableTransparent(mIsTransparent);
+            startPreferenceFragment(mPreferenceFragment);
 
-        mSettingsPresenter.onViewInitialized();
+            mSettingsPresenter.onViewInitialized();
+        } catch (IllegalStateException e) {
+            // NOP
+        }
     }
 
     @Override
@@ -99,7 +102,7 @@ public class AppDialogFragment extends LeanbackSettingsFragment
     }
 
     @Override
-    public void addCategories(List<SettingsCategory> categories) {
+    public void addCategories(List<OptionCategory> categories) {
         if (mPreferenceFragment != null) {
             mPreferenceFragment.addCategories(categories);
         }
@@ -122,21 +125,37 @@ public class AppDialogFragment extends LeanbackSettingsFragment
 
         if (pref instanceof StringListPreference) {
             StringListPreference listPreference = (StringListPreference) pref;
-            LeanbackPreferenceDialogFragment f = StringListPreferenceDialogFragment.newInstanceStringList(listPreference.getKey());
+            StringListPreferenceDialogFragment f = StringListPreferenceDialogFragment.newInstanceStringList(listPreference.getKey());
+            f.enableTransparent(mIsTransparent);
             f.setTargetFragment(caller, 0);
             startPreferenceFragment(f);
 
             return true;
         } else if (pref instanceof ListPreference) {
             ListPreference listPreference = (ListPreference) pref;
-            LeanbackPreferenceDialogFragment f = RadioListPreferenceDialogFragment.newInstanceSingle(listPreference.getKey());
+            RadioListPreferenceDialogFragment f = RadioListPreferenceDialogFragment.newInstanceSingle(listPreference.getKey());
+            f.enableTransparent(mIsTransparent);
             f.setTargetFragment(caller, 0);
             startPreferenceFragment(f);
 
             return true;
         }
 
+        // NOTE: Transparent CheckedList should be placed here (just in case you'll need it).
+
         return super.onPreferenceDisplayDialog(caller, pref);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = super.onCreateView(inflater, container, savedInstanceState);
+
+        if (mIsTransparent && view != null) {
+            // Enable transparent background (this is the only place to do it)
+            ViewUtil.enableTransparentDialog(getActivity(), view);
+        }
+
+        return view;
     }
 
     @Override
@@ -146,27 +165,46 @@ public class AppDialogFragment extends LeanbackSettingsFragment
         }
     }
 
-    public void onFinish() {
-        mSettingsPresenter.onClose();
+    @Override
+    public void goBack() {
+        if (mPreferenceFragment != null) {
+            mPreferenceFragment.goBack();
+        }
     }
 
+    public void onFinish() {
+        mSettingsPresenter.onFinish();
+    }
+    
     public static class AppPreferenceFragment extends LeanbackPreferenceFragment {
         private static final String TAG = AppPreferenceFragment.class.getSimpleName();
-        private List<SettingsCategory> mCategories;
+        private List<OptionCategory> mCategories;
         private Context mExtractedContext;
-        private AppDialogFragmentHelper mManager;
+        private AppDialogFragmentManager mManager;
         private String mTitle;
         private int mBackStackCount;
+        private boolean mIsTransparent;
 
         @Override
         public void onCreatePreferences(Bundle bundle, String s) {
             // Note, place in field with different name to avoid field overlapping
             mExtractedContext = (Context) Helpers.getField(this, "mStyledContext");
-            mManager = new AppDialogFragmentHelper(mExtractedContext);
+            mManager = new AppDialogFragmentManager(mExtractedContext);
 
             initPrefs();
 
             Log.d(TAG, "onCreatePreferences");
+        }
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+            View view = super.onCreateView(inflater, container, savedInstanceState);
+
+            if (mIsTransparent && view != null) {
+                ViewUtil.enableTransparentDialog(getActivity(), view);
+            }
+
+            return view;
         }
 
         private void initPrefs() {
@@ -182,7 +220,7 @@ public class AppDialogFragment extends LeanbackSettingsFragment
 
         private void addCategories(PreferenceScreen screen) {
             if (mCategories != null) {
-                for (SettingsCategory category : mCategories) {
+                for (OptionCategory category : mCategories) {
                     if (category.items != null) {
                         screen.addPreference(mManager.createPreference(category));
                     }
@@ -206,23 +244,7 @@ public class AppDialogFragment extends LeanbackSettingsFragment
                     if (getFragmentManager() != null) {
                         mBackStackCount = 0;
 
-                        getFragmentManager().addOnBackStackChangedListener(() -> {
-                            if (getFragmentManager() != null) {
-                                int currentBackStackCount = getFragmentManager().getBackStackEntryCount();
-
-                                if (currentBackStackCount < mBackStackCount) {
-                                    if (currentBackStackCount == 0) {
-                                        // single dialog
-                                        getActivity().finish();
-                                    } else {
-                                        // multiple stacked dialogs
-                                        getFragmentManager().popBackStack();
-                                    }
-                                }
-
-                                mBackStackCount = currentBackStackCount;
-                            }
-                        });
+                        getFragmentManager().addOnBackStackChangedListener(this::onBackPressed);
                     }
                 }
             }
@@ -238,12 +260,40 @@ public class AppDialogFragment extends LeanbackSettingsFragment
             return super.onPreferenceTreeClick(preference);
         }
 
-        public void addCategories(List<SettingsCategory> categories) {
+        public void addCategories(List<OptionCategory> categories) {
             mCategories = categories;
         }
 
         public void setTitle(String title) {
             mTitle = title;
+        }
+
+        public void enableTransparent(boolean enable) {
+            mIsTransparent = enable;
+        }
+
+        public void goBack() {
+            if (getFragmentManager() != null) {
+                getFragmentManager().popBackStack();
+            }
+        }
+
+        private void onBackPressed() {
+            if (getFragmentManager() != null) {
+                int currentBackStackCount = getFragmentManager().getBackStackEntryCount();
+
+                if (currentBackStackCount < mBackStackCount) {
+                    if (currentBackStackCount == 0) {
+                        // single dialog
+                        getActivity().finish();
+                    } else {
+                        // multiple stacked dialogs
+                        getFragmentManager().popBackStack();
+                    }
+                }
+
+                mBackStackCount = currentBackStackCount;
+            }
         }
     }
 }

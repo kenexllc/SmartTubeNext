@@ -14,11 +14,13 @@ public class IntentExtractor {
      */
     private static final String[] SEARCH_KEYS = {"search_query", "query"};
     private static final String VIDEO_ID_KEY = "v";
+    private static final String VIDEO_ID_LIST_KEY = "video_ids";
     private static final String CHANNEL_URL = "/channel/";
+    private static final String CHANNEL_URL_ALT = "/c/";
     private static final String USER_URL = "/user/";
-    private static final String SUBSCRIPTIONS_URL = "https://www.youtube.com/tv#/zylon-surface?c=FEsubscriptions&resume";
-    private static final String HISTORY_URL = "https://www.youtube.com/tv#/zylon-surface?c=FEmy_youtube&resume";
-    private static final String RECOMMENDED_URL = "https://www.youtube.com/tv#/zylon-surface?c=default&resume";
+    private static final String SUBSCRIPTIONS_URL = "https://www.youtube.com/tv#/zylon-surface?c=FEsubscriptions"; // last 'resume' param isn't parsed by intent and should be removed
+    private static final String HISTORY_URL = "https://www.youtube.com/tv#/zylon-surface?c=FEmy_youtube"; // last 'resume' param isn't parsed by intent and should be removed
+    private static final String RECOMMENDED_URL = "https://www.youtube.com/tv#/zylon-surface?c=default"; // last 'resume' param isn't parsed by intent and should be removed
     private static final String PLAYLIST_KEY = "list";
 
     public static String extractVideoId(Intent intent) {
@@ -26,17 +28,25 @@ public class IntentExtractor {
             return null;
         }
 
-        if (extractVoiceQuery(intent.getData()) != null) {
+        if (extractVoiceQuery(extractUri(intent)) != null) {
             return null;
         }
 
         // Don't Uri directly or you might get UnsupportedOperationException on some urls.
-        UrlQueryString parser = UrlQueryStringFactory.parse(intent.getData());
+        UrlQueryString parser = UrlQueryStringFactory.parse(extractUri(intent));
         String videoId = parser.get(VIDEO_ID_KEY);
 
         if (videoId == null) {
-            // Suppose that link type is https://youtu.be/lBeMDqcWTG8
-            videoId = intent.getData().getLastPathSegment();
+            // https://youtube.com/watch_videos?video_ids=xdq_sYfmN6c,xdq_sYfmN6c
+            String idList = parser.get(VIDEO_ID_LIST_KEY);
+
+            if (idList != null) {
+                // temp solution: use one video from the list
+                videoId = idList.split(",")[0];
+            } else {
+                // Suppose that link type is https://youtu.be/lBeMDqcWTG8
+                videoId = extractUri(intent).getLastPathSegment();
+            }
         }
 
         if (!isValid(videoId)) {
@@ -55,14 +65,14 @@ public class IntentExtractor {
             return null;
         }
 
-        String voiceQuery = extractVoiceQuery(intent.getData());
+        String voiceQuery = extractVoiceQuery(extractUri(intent));
 
         if (voiceQuery != null) {
             return voiceQuery;
         }
 
         // Don't Uri directly or you might get UnsupportedOperationException on some urls.
-        UrlQueryString parser = UrlQueryStringFactory.parse(intent.getData());
+        UrlQueryString parser = UrlQueryStringFactory.parse(extractUri(intent));
 
         for (String searchKey : SEARCH_KEYS) {
             String searchText = parser.get(searchKey);
@@ -83,7 +93,7 @@ public class IntentExtractor {
             return null;
         }
 
-        String[] split = intent.getData().toString().split(CHANNEL_URL);
+        String[] split = extractUri(intent).toString().split(CHANNEL_URL);
 
         return split.length == 2 ? split[1] : null;
     }
@@ -96,7 +106,7 @@ public class IntentExtractor {
             return null;
         }
 
-        UrlQueryString parser = UrlQueryStringFactory.parse(intent.getData());
+        UrlQueryString parser = UrlQueryStringFactory.parse(extractUri(intent));
 
         return parser.get(PLAYLIST_KEY);
     }
@@ -106,7 +116,7 @@ public class IntentExtractor {
     }
 
     public static boolean hasData(Intent intent) {
-        return intent != null && intent.getData() != null;
+        return intent != null && extractUri(intent) != null;
     }
 
     /**
@@ -114,12 +124,45 @@ public class IntentExtractor {
      */
     public static boolean isChannelUrl(Intent intent) {
         return intent != null
-                && intent.getData() != null
-                && Helpers.contains(new String[] {SUBSCRIPTIONS_URL, HISTORY_URL, RECOMMENDED_URL}, intent.getData().toString());
+                && extractUri(intent) != null
+                && Helpers.startsWithAny(extractUri(intent).toString(), SUBSCRIPTIONS_URL, HISTORY_URL, RECOMMENDED_URL);
+    }
+
+    /**
+     * ATV: Subscriptions icon url
+     */
+    public static boolean isSubscriptionsUrl(Intent intent) {
+        return intent != null
+                && extractUri(intent) != null
+                && Helpers.startsWith(extractUri(intent).toString(), SUBSCRIPTIONS_URL);
+    }
+
+    /**
+     * ATV: History icon url
+     */
+    public static boolean isHistoryUrl(Intent intent) {
+        return intent != null
+                && extractUri(intent) != null
+                && Helpers.startsWith(extractUri(intent).toString(), HISTORY_URL);
+    }
+
+    /**
+     * ATV: Recommended icon url
+     */
+    public static boolean isRecommendedUrl(Intent intent) {
+        return intent != null
+                && extractUri(intent) != null
+                && Helpers.startsWith(extractUri(intent).toString(), RECOMMENDED_URL);
+    }
+
+    public static boolean isRootUrl(Intent intent) {
+        return intent != null
+                && extractUri(intent) != null
+                && (extractUri(intent).toString().endsWith(".com/") || extractUri(intent).toString().endsWith(".com"));
     }
 
     public static boolean isStartVoiceCommand(Intent intent) {
-        return intent != null && intent.getData() != null && intent.getData().toString().contains("launch=voice");
+        return intent != null && extractUri(intent) != null && extractUri(intent).toString().contains("launch=voice");
     }
 
     /**
@@ -130,6 +173,16 @@ public class IntentExtractor {
     }
 
     private static boolean isEmptyIntent(Intent intent) {
-        return intent == null || intent.getData() == null || !Intent.ACTION_VIEW.equals(intent.getAction());
+        return intent == null || (!Intent.ACTION_VIEW.equals(intent.getAction()) && !Intent.ACTION_SEND.equals(intent.getAction())) || extractUri(intent) == null;
+    }
+
+    private static Uri extractUri(Intent intent) {
+        if (intent == null) {
+            return null;
+        }
+
+        return intent.getData() != null ? intent.getData() :
+                intent.getStringExtra(Intent.EXTRA_TEXT) != null ?
+                        Uri.parse(intent.getStringExtra(Intent.EXTRA_TEXT)) : null;
     }
 }

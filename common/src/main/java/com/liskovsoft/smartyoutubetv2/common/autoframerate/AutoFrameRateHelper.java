@@ -1,27 +1,41 @@
 package com.liskovsoft.smartyoutubetv2.common.autoframerate;
 
 import android.app.Activity;
+import android.content.Context;
 import android.util.Pair;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplayHolder.Mode;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplaySyncHelper;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplaySyncHelper.AutoFrameRateListener;
-import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplaySyncHelperAlt;
 
 import java.util.HashMap;
 
 public class AutoFrameRateHelper {
     private static final String TAG = AutoFrameRateHelper.class.getSimpleName();
-    private final DisplaySyncHelper mSyncHelper;
+    private static AutoFrameRateHelper sInstance;
     private static final long THROTTLE_INTERVAL_MS = 5_000;
+    private final DisplaySyncHelper mSyncHelper;
     private long mPrevCall;
     private HashMap<Float, Float> mFrameRateMapping;
     private boolean mIsFpsCorrectionEnabled;
+    private AutoFrameRateListener mListener;
 
-    public AutoFrameRateHelper() {
-        mSyncHelper = new DisplaySyncHelperAlt(null);
+    private AutoFrameRateHelper(Context context) {
+        mSyncHelper = new DisplaySyncHelper(context);
 
         initFrameRateMapping();
+    }
+
+    public static AutoFrameRateHelper instance(Context context) {
+        if (sInstance == null) {
+            sInstance = new AutoFrameRateHelper(context);
+        }
+
+        if (context != null) {
+            sInstance.setContext(context);
+        }
+
+        return sInstance;
     }
 
     public void apply(Activity activity, FormatItem format) {
@@ -57,7 +71,7 @@ public class AutoFrameRateHelper {
     }
 
     public void saveOriginalState(Activity activity) {
-        setActivity(activity);
+        setContext(activity);
 
         if (activity == null) {
             Log.e(TAG, "Activity in null. exiting...");
@@ -79,25 +93,37 @@ public class AutoFrameRateHelper {
     }
 
     public void apply(Activity activity, FormatItem format, boolean force) {
-        setActivity(activity);
+        setContext(activity);
 
         if (activity == null) {
             Log.e(TAG, "Activity in null. exiting...");
-            return;
-        }
-
-        if (!isSupported()) {
-            Log.e(TAG, "Autoframerate not supported. Exiting...");
+            if (mListener != null) {
+                mListener.onCancel();
+            }
             return;
         }
 
         if (format == null) {
             Log.e(TAG, "Can't apply mode change: format is null");
+            if (mListener != null) {
+                mListener.onCancel();
+            }
+            return;
+        }
+
+        if (!isSupported()) {
+            Log.e(TAG, "Autoframerate not supported. Exiting...");
+            if (mListener != null) {
+                mListener.onCancel();
+            }
             return;
         }
 
         if (System.currentTimeMillis() - mPrevCall < THROTTLE_INTERVAL_MS) {
             Log.e(TAG, "Throttling afr calls...");
+            if (mListener != null) {
+                mListener.onCancel();
+            }
             return;
         } else {
             mPrevCall = System.currentTimeMillis();
@@ -136,6 +162,11 @@ public class AutoFrameRateHelper {
     }
 
     private void restoreOriginalState(Activity activity, boolean force) {
+        if (activity == null) {
+            Log.e(TAG, "activity == null");
+            return;
+        }
+
         if (!isSupported()) {
             Log.d(TAG, "restoreOriginalState: autoframerate not enabled... exiting...");
             return;
@@ -149,6 +180,7 @@ public class AutoFrameRateHelper {
     }
 
     public void setListener(AutoFrameRateListener listener) {
+        mListener = listener;
         mSyncHelper.setListener(listener);
     }
 
@@ -158,6 +190,10 @@ public class AutoFrameRateHelper {
 
     public void setFpsCorrectionEnabled(boolean enabled) {
         mIsFpsCorrectionEnabled = enabled;
+    }
+
+    public void setDoubleRefreshRateEnabled(boolean enabled) {
+        mSyncHelper.setDoubleRefreshRateEnabled(enabled);
     }
 
     private void resetStats() {
@@ -187,7 +223,7 @@ public class AutoFrameRateHelper {
     //    mSyncHelper.resetMode(mActivity.getWindow());
     //}
 
-    private void setActivity(Activity activity) {
+    private void setContext(Context activity) {
         mSyncHelper.setContext(activity);
     }
 }

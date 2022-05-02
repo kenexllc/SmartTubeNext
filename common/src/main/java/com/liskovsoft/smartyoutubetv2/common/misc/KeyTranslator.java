@@ -1,18 +1,46 @@
 package com.liskovsoft.smartyoutubetv2.common.misc;
 
+import android.app.Instrumentation;
 import android.view.KeyEvent;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.sharedutils.rx.RxUtils;
+import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 
 import java.util.Map;
 
 public abstract class KeyTranslator {
     private static final String TAG = KeyTranslator.class.getSimpleName();
 
-    public KeyEvent translate(KeyEvent event) {
+    public final boolean translate(KeyEvent event) {
         Map<Integer, Integer> keyMapping = getKeyMapping();
-        Integer newKeyCode = keyMapping.get(event.getKeyCode());
+        Integer newKeyCode = null;
+        boolean handled = false;
 
-        return translate(event, newKeyCode);
+        if (keyMapping != null) {
+            newKeyCode = keyMapping.get(event.getKeyCode());
+        }
+
+        Map<Integer, Runnable> actionMapping = getActionMapping();
+
+        if (actionMapping != null) {
+            Runnable action = actionMapping.get(event.getKeyCode());
+            if (action != null) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    action.run();
+                }
+                newKeyCode = KeyEvent.KEYCODE_UNKNOWN; // disable original mapping
+            }
+        }
+
+        KeyEvent newKeyEvent = translate(event, newKeyCode);
+
+        if (newKeyEvent != event) {
+            handled = true;
+
+            RxUtils.runAsync(() -> Utils.sendKey(newKeyEvent));
+        }
+
+        return handled;
     }
 
     private KeyEvent translate(KeyEvent origin, Integer newKeyCode) {
@@ -39,4 +67,6 @@ public abstract class KeyTranslator {
     }
 
     protected abstract Map<Integer, Integer> getKeyMapping();
+
+    protected abstract Map<Integer, Runnable> getActionMapping();
 }

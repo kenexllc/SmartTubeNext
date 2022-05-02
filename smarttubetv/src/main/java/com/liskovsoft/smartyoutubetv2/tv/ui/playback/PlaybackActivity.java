@@ -10,9 +10,11 @@ import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controller.PlaybackEngineController;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.views.PlaybackView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
+import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 import com.liskovsoft.smartyoutubetv2.tv.R;
 import com.liskovsoft.smartyoutubetv2.tv.ui.common.LeanbackActivity;
 
@@ -29,10 +31,10 @@ public class PlaybackActivity extends LeanbackActivity {
     private static final float GAMEPAD_TRIGGER_INTENSITY_OFF = 0.45f;
     private boolean gamepadTriggerPressed = false;
     private PlaybackFragment mPlaybackFragment;
-    private long mBackPressedMs;
-    private long mFinishCalledMs;
     private ViewManager mViewManager;
+    private PlayerTweaksData mPlayerTweaksData;
     private GeneralData mGeneralData;
+    private boolean mBackPressed;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -44,6 +46,7 @@ public class PlaybackActivity extends LeanbackActivity {
             mPlaybackFragment = (PlaybackFragment) fragment;
         }
         mViewManager = ViewManager.instance(this);
+        mPlayerTweaksData = PlayerTweaksData.instance(this);
         mGeneralData = GeneralData.instance(this);
     }
 
@@ -71,6 +74,15 @@ public class PlaybackActivity extends LeanbackActivity {
         }
 
         return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (mPlaybackFragment != null) {
+            mPlaybackFragment.onDispatchGenericMotionEvent(event);
+        }
+
+        return super.dispatchGenericMotionEvent(event);
     }
 
     @Override
@@ -139,14 +151,12 @@ public class PlaybackActivity extends LeanbackActivity {
     }
 
     private boolean wannaEnterToPip() {
-        return mPlaybackFragment != null && mPlaybackFragment.getPlaybackMode() == PlaybackEngineController.BACKGROUND_MODE_PIP && !isInPictureInPictureMode();
+        return mPlaybackFragment != null && mPlaybackFragment.getBackgroundMode() == PlaybackEngineController.BACKGROUND_MODE_PIP && !isInPictureInPictureMode();
     }
 
     @Override
     public void finish() {
         Log.d(TAG, "Finishing activity...");
-
-        mFinishCalledMs = System.currentTimeMillis();
 
         // NOTE: When exiting PIP mode onPause is called immediately after onResume
 
@@ -155,29 +165,46 @@ public class PlaybackActivity extends LeanbackActivity {
 
         // NOTE: block back button for PIP.
         // User pressed PIP button in the player.
-        if (!isBackPressed() || mGeneralData.getBackgroundShortcut() == GeneralData.BACKGROUND_SHORTCUT_HOME_N_BACK) {
-            enterPipMode();
+        if (!mBackPressed) {
+            enterPipMode(); // NOTE: without this call app will hangs when pressing on PIP button
         }
 
-        if (doNotFinish()) {
+        if (doNotDestroy() && !mBackPressed) {
             // Ensure to opening this activity when the user is returning to the app
             mViewManager.blockTop(this);
             mViewManager.startParentView(this);
         } else {
-            mPlaybackFragment.onFinish();
-            super.finish();
+            if (mPlayerTweaksData.isKeepFinishedActivityEnabled()) {
+                //moveTaskToBack(true); // Don't do this or you'll have problems when player overlaps other apps (e.g. casting)
+                mViewManager.startParentView(this);
+            } else {
+                mPlaybackFragment.onFinish();
+                super.finish();
+            }
         }
     }
 
-    private boolean doNotFinish() {
-        sIsInPipMode = isInPipMode();
-        return sIsInPipMode || (mPlaybackFragment.getPlaybackMode() == PlaybackEngineController.BACKGROUND_MODE_SOUND
-        && mGeneralData.getBackgroundShortcut() == GeneralData.BACKGROUND_SHORTCUT_HOME_N_BACK);
+    @Override
+    public void finishReally() {
+        mPlaybackFragment.onFinish();
+        super.finishReally();
+    }
+
+    @Override
+    public void onBackPressed() {
+        mBackPressed = mGeneralData.getBackgroundPlaybackShortcut() != GeneralData.BACKGROUND_PLAYBACK_SHORTCUT_HOME_BACK;
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onResume() {
+        mBackPressed = false;
+        super.onResume();
     }
 
     private boolean doNotDestroy() {
         sIsInPipMode = isInPipMode();
-        return sIsInPipMode || mPlaybackFragment.getPlaybackMode() == PlaybackEngineController.BACKGROUND_MODE_SOUND;
+        return sIsInPipMode || mPlaybackFragment.getBackgroundMode() == PlaybackEngineController.BACKGROUND_MODE_SOUND;
     }
 
     @SuppressWarnings("deprecation")
@@ -185,7 +212,7 @@ public class PlaybackActivity extends LeanbackActivity {
         if (Build.VERSION.SDK_INT >= 21 && Build.VERSION.SDK_INT < 26) {
             if (Build.VERSION.SDK_INT == 21) {
                 // Playback pause fix?
-                mPlaybackFragment.showControls(true);
+                mPlaybackFragment.showOverlay(true);
             }
 
             if (mPlaybackFragment.isPlaying()) {
@@ -212,12 +239,6 @@ public class PlaybackActivity extends LeanbackActivity {
     }
 
     @Override
-    public void onBackPressed() {
-        mBackPressedMs = System.currentTimeMillis();
-        super.onBackPressed();
-    }
-
-    @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode);
 
@@ -229,9 +250,9 @@ public class PlaybackActivity extends LeanbackActivity {
 
     @Override
     public void onUserLeaveHint() {
-        // Check that user not open dialog instead of really leaving the activity
-        if (!AppDialogPresenter.instance(this).isDialogShown() && isHomePressed()) {
-            switch (mPlaybackFragment.getPlaybackMode()) {
+        // Check that user not open dialog/search activity instead of really leaving the activity
+        if (!AppDialogPresenter.instance(this).isDialogShown() && !mBackPressed && !mViewManager.isNewViewPending()) {
+            switch (mPlaybackFragment.getBackgroundMode()) {
                 case PlaybackEngineController.BACKGROUND_MODE_PLAY_BEHIND:
                     enterBackgroundPlayMode();
                     // Do we need to do something additional when running Play Behind?
@@ -259,22 +280,7 @@ public class PlaybackActivity extends LeanbackActivity {
         return isInPictureInPictureMode();
     }
 
-    private boolean isHomePressed() {
-        // Assume Home if no back and finish event happens
-        return !isBackPressed() && !isPipPressed() && !mViewManager.isNewViewPending();
-    }
-
-    private boolean isPipPressed() {
-        return isFinishCalled() && !isBackPressed();
-    }
-
-    private boolean isFinishCalled() {
-        return System.currentTimeMillis() - mFinishCalledMs < 1_000;
-    }
-
-    private boolean isBackPressed() {
-        long backPressedAgoMs = System.currentTimeMillis() - mBackPressedMs;
-        Log.d(TAG, "Back pressed ms ago: " + backPressedAgoMs);
-        return backPressedAgoMs < 1_000;
+    public PlaybackView getPlaybackView() {
+        return mPlaybackFragment;
     }
 }

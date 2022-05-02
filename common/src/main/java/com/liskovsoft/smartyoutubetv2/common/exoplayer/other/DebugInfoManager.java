@@ -25,12 +25,14 @@ import com.google.android.exoplayer2.mediacodec.MediaCodecInfo;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.liskovsoft.sharedutils.helpers.AppInfoHelpers;
+import com.liskovsoft.sharedutils.helpers.FileHelpers;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplayHolder.Mode;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.UhdHelper;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.versions.ExoUtils;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs;
+import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -194,7 +196,7 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         appendDisplayModeId();
         //appendPlayerWindowIndex();
         appendVersion();
-        appendDeviceNameAndSDK();
+        appendDeviceNameSDKCache();
 
         // Schedule next update
         mDebugViewGroup.removeCallbacks(this);
@@ -244,26 +246,7 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         //mVideoInfo.add(new Pair<>("Aspect Ratio", par));
         String videoCodecName = getVideoDecoderNameV2();
         mVideoInfo.add(new Pair<>("Video Decoder Name", videoCodecName));
-        mVideoInfo.add(new Pair<>("Hardware Accelerated", String.valueOf(isHardwareAccelerated(videoCodecName))));
-    }
-
-    /**
-     * <a href="https://github.com/google/ExoPlayer/issues/4757">More info</a>
-     * @param videoCodecName name from CodecInfo
-     * @return is accelerated
-     */
-    private boolean isHardwareAccelerated(String videoCodecName) {
-        if (videoCodecName == null) {
-            return false;
-        }
-
-        for (String name : new String[]{"omx.google.", "c2.android."}) {
-            if (videoCodecName.toLowerCase().startsWith(name)) {
-                return false;
-            }
-        }
-
-        return true;
+        mVideoInfo.add(new Pair<>("Hardware Accelerated", String.valueOf(Helpers.isHardwareAccelerated(videoCodecName))));
     }
 
     private void appendRuntimeInfo() {
@@ -306,23 +289,43 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
         }
     }
 
+    //private void updateDisplayModeId() {
+    //    mDisplayModeId.clear();
+    //
+    //    Mode currentMode = mUhdHelper.getCurrentMode();
+    //    Mode[] supportedModes = mUhdHelper.getSupportedModes();
+    //
+    //    boolean isAfrSupported = currentMode != null && supportedModes != null && supportedModes.length > 1;
+    //
+    //    mDisplayModeId.add(new Pair<>("Software Auto Frame Rate", isAfrSupported ? "supported" : NOT_AVAILABLE));
+    //
+    //    if (isAfrSupported) {
+    //        String bootResolution = AppPrefs.instance(mContext).getBootResolution();
+    //        String currentResolution = UhdHelper.toResolution(currentMode);
+    //        currentResolution = currentResolution != null ? currentResolution : bootResolution;
+    //
+    //        mDisplayModeId.add(new Pair<>("Current/UI Resolution", currentResolution));
+    //        mDisplayModeId.add(new Pair<>("Boot Resolution", bootResolution != null ? bootResolution : NOT_AVAILABLE));
+    //
+    //        mDisplayModeId.add(new Pair<>("Display Mode ID", String.valueOf(currentMode.getModeId())));
+    //        mDisplayModeId.add(new Pair<>("Display Modes Length", String.valueOf(supportedModes.length)));
+    //    }
+    //}
+
     private void updateDisplayModeId() {
         mDisplayModeId.clear();
 
         Mode currentMode = mUhdHelper.getCurrentMode();
         Mode[] supportedModes = mUhdHelper.getSupportedModes();
 
-        if (currentMode != null && supportedModes != null && supportedModes.length > 1) { // AFR is supported (more than one display mode).
-            String bootResolution = AppPrefs.instance(mContext).getBootResolution();
-            String currentResolution = UhdHelper.toResolution(currentMode);
-            currentResolution = currentResolution != null ? currentResolution : bootResolution;
+        String bootResolution = AppPrefs.instance(mContext).getBootResolution();
+        String currentResolution = UhdHelper.toResolution(currentMode);
 
-            mDisplayModeId.add(new Pair<>("Current Resolution", currentResolution));
-            mDisplayModeId.add(new Pair<>("Boot Resolution", bootResolution != null ? bootResolution : NOT_AVAILABLE));
+        mDisplayModeId.add(new Pair<>("UI Resolution", currentResolution != null ? currentResolution : NOT_AVAILABLE));
+        mDisplayModeId.add(new Pair<>("Boot Resolution", bootResolution != null ? bootResolution : NOT_AVAILABLE));
 
-            mDisplayModeId.add(new Pair<>("Display Mode ID", String.valueOf(currentMode.getModeId())));
-            mDisplayModeId.add(new Pair<>("Display Modes Length", String.valueOf(supportedModes.length)));
-        }
+        mDisplayModeId.add(new Pair<>("Display Mode ID", currentMode != null ? String.valueOf(currentMode.getModeId()) : NOT_AVAILABLE));
+        mDisplayModeId.add(new Pair<>("Display Modes Length", supportedModes != null ? String.valueOf(supportedModes.length) : NOT_AVAILABLE));
     }
 
     private void appendDisplayInfo() {
@@ -343,12 +346,17 @@ public final class DebugInfoManager implements Runnable, Player.EventListener {
 
     private void appendVersion() {
         appendRow("ExoPlayer Version", ExoPlayerLibraryInfo.VERSION);
+        appendRow("ExoPlayer DataSource", PlayerTweaksData.instance(mContext).isBufferingFixEnabled() ? "OkHttp" : "Default");
         appendRow(mAppVersion, AppInfoHelpers.getAppVersionName(mContext));
     }
 
-    private void appendDeviceNameAndSDK() {
+    private void appendDeviceNameSDKCache() {
         appendRow("Device Name", Helpers.getDeviceName());
         appendRow("Android SDK", VERSION.SDK_INT);
+        appendRow("Disk cache size (MB)", String.valueOf(
+                (FileHelpers.getDirSize(FileHelpers.getInternalCacheDir(mContext)) + FileHelpers.getDirSize(FileHelpers.getExternalCacheDir(mContext)))
+                        / 1024 / 1024
+        ));
     }
 
     private void appendRow(String name, boolean val) {

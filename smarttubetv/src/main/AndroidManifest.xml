@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.liskovsoft.smartyoutubetv2.tv">
+          xmlns:tools="http://schemas.android.com/tools"
+          package="com.liskovsoft.smartyoutubetv2.tv">
+
+    <!-- Shield on Android 11 speech recognizer not working fix? -->
+    <!-- https://stackoverflow.com/questions/64319117/speechrecognizer-not-available-when-targeting-android-11 -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <permission
         android:name="${applicationId}.ACCESS_VIDEO_DATA"
@@ -36,7 +44,7 @@
     <uses-feature
         android:name="android.software.leanback"
         android:required="true" />
-
+    
     <application
         android:name="com.liskovsoft.smartyoutubetv2.tv.ui.main.MainApplication"
         android:allowBackup="false"
@@ -96,6 +104,11 @@
 
                 <data android:scheme="vnd.youtube"/>
                 <data android:scheme="vnd.youtube.launch"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
             </intent-filter>
         </activity>
 
@@ -174,7 +187,7 @@
             android:launchMode="singleInstance"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.Leanback.Details">
-            
+
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH" />
             </intent-filter>

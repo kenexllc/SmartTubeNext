@@ -16,8 +16,15 @@
 
 package com.liskovsoft.smartyoutubetv2.tv.ui.mod.leanback.misc;
 
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ClickableSpan;
+import android.text.style.URLSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,6 +39,12 @@ import androidx.preference.DialogPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.MultiSelectListPreference;
 import androidx.recyclerview.widget.RecyclerView;
+import com.liskovsoft.sharedutils.helpers.MessageHelpers;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter;
+import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
+import com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity;
+import com.liskovsoft.smartyoutubetv2.tv.ui.mod.clickable.LinkifyCompat;
+import com.liskovsoft.smartyoutubetv2.tv.ui.mod.clickable.LinkifyCompat.LinkifyClickHandler;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -56,6 +69,7 @@ public class LeanbackListPreferenceDialogFragment extends LeanbackPreferenceDial
     protected CharSequence[] mEntryValues;
     private CharSequence mDialogTitle;
     private CharSequence mDialogMessage;
+    private int mDialogLayoutRes;
     protected Set<String> mInitialSelections;
     protected String mInitialSelection;
 
@@ -89,6 +103,7 @@ public class LeanbackListPreferenceDialogFragment extends LeanbackPreferenceDial
             final DialogPreference preference = getPreference();
             mDialogTitle = preference.getDialogTitle();
             mDialogMessage = preference.getDialogMessage();
+            mDialogLayoutRes = preference.getDialogLayoutResource();
 
             if (preference instanceof ListPreference) {
                 mMulti = false;
@@ -162,11 +177,70 @@ public class LeanbackListPreferenceDialogFragment extends LeanbackPreferenceDial
         final CharSequence message = mDialogMessage;
         if (!TextUtils.isEmpty(message)) {
             final TextView messageView = (TextView) view.findViewById(android.R.id.message);
+
+            // Modified. Make textView focusable and clickable.
+            //messageView.setAutoLinkMask(Linkify.WEB_URLS);
+            //messageView.setMovementMethod(LinkMovementMethod.getInstance()); // allow to move if no links in desc
+            //messageView.setLinksClickable(true); // NOTE: don't prevent click actions
+
+            messageView.setFocusable(true);
             messageView.setVisibility(View.VISIBLE);
             messageView.setText(message);
+
+            LinkifyCompat.addLinks(messageView, LinkifyCompat.WEB_URLS | LinkifyCompat.TIME_CODES, new LinkifyClickHandler() {
+                private final Context context = messageView.getContext();
+
+                @Override
+                public void onUrlClick(String link) {
+                    // Can't handle all intents internally (e.g. channel url)
+                    //Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+                    //intent.setClass(context, SplashActivity.class);
+                    //
+                    //if (intent.resolveActivity(context.getPackageManager()) != null) {
+                    //    context.startActivity(intent);
+                    //} else {
+                    //    Utils.showMultiChooser(context, Uri.parse(link));
+                    //}
+
+                    Utils.showMultiChooser(context, Uri.parse(link));
+                }
+
+                @Override
+                public void onTimeClick(String timeCode) {
+                    PlaybackPresenter.instance(context).setPosition(timeCode);
+                }
+            });
+
+            // Modified. Remove other views.
+            ViewGroup parent = (ViewGroup) verticalGridView.getParent();
+            parent.removeView(verticalGridView);
         }
 
         return view;
+    }
+
+    /**
+     * Make link open in browser. Not working.
+     */
+    private CharSequence toSpannableString(CharSequence message) {
+        SpannableStringBuilder builder = SpannableStringBuilder.valueOf(message);
+        URLSpan[] spans = builder.getSpans(0, builder.length(), URLSpan.class);
+
+        for (URLSpan span : spans) {
+           builder.setSpan(new ClickableSpan() {
+                   @Override
+                   public void onClick(@NonNull View widget) {
+                       MessageHelpers.showMessage(getContext(), "On link clicked " + span.getURL());
+                   }
+               },
+               builder.getSpanStart(span),
+               builder.getSpanEnd(span),
+               Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+           );
+           builder.removeSpan(span);
+        }
+
+        return builder;
     }
 
     public RecyclerView.Adapter onCreateAdapter() {
@@ -211,7 +285,7 @@ public class LeanbackListPreferenceDialogFragment extends LeanbackPreferenceDial
         public int getItemCount() {
             return mEntries.length;
         }
-
+        
         @Override
         public void onItemClick(ViewHolder viewHolder) {
             final int index = viewHolder.getAdapterPosition();

@@ -20,7 +20,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGrou
 import com.liskovsoft.smartyoutubetv2.tv.adapter.VideoGroupObjectAdapter;
 import com.liskovsoft.smartyoutubetv2.tv.presenter.VideoCardPresenter;
 import com.liskovsoft.smartyoutubetv2.tv.presenter.CustomListRowPresenter;
-import com.liskovsoft.smartyoutubetv2.tv.presenter.base.OnItemViewPressedListener;
+import com.liskovsoft.smartyoutubetv2.tv.presenter.base.OnItemLongPressedListener;
 import com.liskovsoft.smartyoutubetv2.tv.ui.browse.interfaces.VideoCategoryFragment;
 import com.liskovsoft.smartyoutubetv2.tv.ui.common.LeanbackActivity;
 import com.liskovsoft.smartyoutubetv2.tv.ui.common.UriBackgroundManager;
@@ -84,8 +84,7 @@ public abstract class MultipleRowsFragment extends RowsSupportFragment implement
     private void setupEventListeners() {
         setOnItemViewClickedListener(new ItemViewClickedListener());
         setOnItemViewSelectedListener(new ItemViewSelectedListener());
-        mCardPresenter.setOnItemViewLongPressedListener(new ItemViewLongClickedListener());
-        mCardPresenter.setOnItemViewMenuPressedListener(new ItemViewLongClickedListener());
+        mCardPresenter.setOnItemViewLongPressedListener(new ItemViewLongPressedListener());
     }
 
     @Override
@@ -118,8 +117,22 @@ public abstract class MultipleRowsFragment extends RowsSupportFragment implement
             return;
         }
 
-        if (group.isNew()) {
+        int action = group.getAction();
+
+        if (action == VideoGroup.ACTION_REPLACE) {
             clear();
+        } else if (action == VideoGroup.ACTION_REMOVE) {
+            VideoGroupObjectAdapter adapter = mVideoGroupAdapters.get(group.getId());
+            if (adapter != null) {
+                adapter.remove(group);
+            }
+            return;
+        } else if (action == VideoGroup.ACTION_SYNC) {
+            VideoGroupObjectAdapter adapter = mVideoGroupAdapters.get(group.getId());
+            if (adapter != null) {
+                adapter.sync(group);
+            }
+            return;
         }
 
         if (group.isEmpty()) {
@@ -137,7 +150,12 @@ public abstract class MultipleRowsFragment extends RowsSupportFragment implement
             mVideoGroupAdapters.put(mediaGroupId, mediaGroupAdapter);
 
             ListRow row = new ListRow(rowHeader, mediaGroupAdapter);
-            mRowsAdapter.add(row);
+
+            if (group.getPosition() == -1) {
+                mRowsAdapter.add(row);
+            } else {
+                mRowsAdapter.add(group.getPosition(), row);
+            }
         } else {
             Log.d(TAG, "Continue row %s %s", group.getTitle(), System.currentTimeMillis());
 
@@ -189,9 +207,9 @@ public abstract class MultipleRowsFragment extends RowsSupportFragment implement
         }
     }
 
-    private final class ItemViewLongClickedListener implements OnItemViewPressedListener {
+    private final class ItemViewLongPressedListener implements OnItemLongPressedListener {
         @Override
-        public void onItemPressed(Presenter.ViewHolder itemViewHolder, Object item) {
+        public void onItemLongPressed(Presenter.ViewHolder itemViewHolder, Object item) {
 
             if (item instanceof Video) {
                 mMainPresenter.onVideoItemLongClicked((Video) item);

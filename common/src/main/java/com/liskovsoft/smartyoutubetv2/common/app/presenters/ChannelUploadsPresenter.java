@@ -7,38 +7,44 @@ import com.liskovsoft.mediaserviceinterfaces.MediaItemManager;
 import com.liskovsoft.mediaserviceinterfaces.MediaService;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
+import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.sharedutils.rx.RxUtils;
+import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
-import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoMenuPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoActionPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.menu.VideoMenuPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.menu.VideoMenuPresenter.VideoMenuCallback;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGroupPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ChannelUploadsView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
-import com.liskovsoft.smartyoutubetv2.common.utils.RxUtils;
 import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
 import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.schedulers.Schedulers;
 
+import java.util.List;
+
 public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> implements VideoGroupPresenter {
     private static final String TAG = ChannelUploadsPresenter.class.getSimpleName();
     @SuppressLint("StaticFieldLeak")
     private static ChannelUploadsPresenter sInstance;
-    private final PlaybackPresenter mPlaybackPresenter;
     private final MediaGroupManager mGroupManager;
     private final MediaItemManager mItemManager;
     private Disposable mUpdateAction;
     private Disposable mScrollAction;
     private Video mVideoItem;
+    private MediaGroup mMediaGroup;
 
     public ChannelUploadsPresenter(Context context) {
         super(context);
         MediaService mediaService = YouTubeMediaService.instance();
         mGroupManager = mediaService.getMediaGroupManager();
         mItemManager = mediaService.getMediaItemManager();
-        mPlaybackPresenter = PlaybackPresenter.instance(context);
     }
 
     public static ChannelUploadsPresenter instance(Context context) {
@@ -53,10 +59,31 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
 
     @Override
     public void onViewInitialized() {
+        super.onViewInitialized();
+
         if (mVideoItem != null) {
             getView().clear();
             updateGrid(mVideoItem);
+        } else if (mMediaGroup != null) {
+            getView().clear();
+            updateGrid(mMediaGroup);
         }
+    }
+
+    @Override
+    public void onViewDestroyed() {
+        super.onViewDestroyed();
+        disposeActions();
+    }
+
+    @Override
+    public void onFinish() {
+        super.onFinish();
+
+        // Destroy the cache only (!) when user pressed back (e.g. wants to explicitly kill the activity)
+        // Otherwise keep the cache to easily restore in case activity is killed by the system.
+        mVideoItem = null;
+        mMediaGroup = null;
     }
 
     @Override
@@ -66,20 +93,18 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
 
     @Override
     public void onVideoItemClicked(Video item) {
-        if (item.isVideo()) {
-            mPlaybackPresenter.openVideo(item);
-        } else if (item.isChannel()) {
-            openChannel(item);
-        }
+        VideoActionPresenter.instance(getContext()).apply(item);
     }
 
     @Override
     public void onVideoItemLongClicked(Video item) {
-        if (item.isVideo()) {
-            VideoMenuPresenter.instance(getContext()).showVideoMenu(item);
-        } else if (item.isChannel()) {
-            VideoMenuPresenter.instance(getContext()).showChannelMenu(item);
-        }
+        VideoMenuPresenter.instance(getContext()).showMenu(item, (videoItem, action) -> {
+            if (action == VideoMenuCallback.ACTION_PLAYLIST_REMOVE) {
+                removeItem(videoItem);
+            } else if (action == VideoMenuCallback.ACTION_UNSUBSCRIBE) {
+                MessageHelpers.showMessage(getContext(), R.string.unsubscribed_from_channel);
+            }
+        });
     }
 
     @Override
@@ -101,19 +126,13 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
     }
 
     @Override
-    public void onViewDestroyed() {
-        super.onViewDestroyed();
-        disposeActions();
-    }
-
-    @Override
     public boolean hasPendingActions() {
         return RxUtils.isAnyActionRunning(mScrollAction, mUpdateAction);
     }
 
     public void openChannel(Video item) {
         // Working with uploads or playlists
-        if (item == null || (!item.hasUploads() && item.playlistId == null)) {
+        if (item == null || (!item.hasUploads() && !item.hasPlaylist())) {
             return;
         }
 
@@ -135,19 +154,23 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
         }
     }
 
-    public Observable<MediaGroup> obtainVideoGroupObservable(Video item) {
+    public Observable<MediaGroup> obtainPlaylistObservable(Video item) {
         if (item == null) {
             return null;
         }
 
+        disposeActions();
+
         return item.hasUploads() ?
-                mGroupManager.getGroupObserve(item.mediaItem) :
-                mItemManager.getMetadataObserve(item.videoId, item.playlistId, 0)
-                        .flatMap(mediaItemMetadata -> Observable.just(mediaItemMetadata.getSuggestions().get(0)));
+               mGroupManager.getGroupObserve(item.mediaItem) :
+               item.hasReloadPageKey() ?
+               mGroupManager.getGroupObserve(item.getReloadPageKey()) :
+               mItemManager.getMetadataObserve(item.videoId, item.playlistId, 0, item.playlistParams)
+                       .flatMap(mediaItemMetadata -> Observable.just(findPlaylistRow(mediaItemMetadata)));
     }
 
     private void updateGrid(Video item) {
-        updateVideoGrid(obtainVideoGroupObservable(item));
+        updateVideoGrid(obtainPlaylistObservable(item));
     }
 
     private void disposeActions() {
@@ -156,6 +179,13 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
 
     private void continueVideoGroup(VideoGroup group) {
         Log.d(TAG, "continueGroup: start continue group: " + group.getTitle());
+
+        disposeActions();
+
+        // Channel item position restore may be called too early (Xiaomi)
+        if (getView() == null) {
+            return;
+        }
 
         getView().showProgressBar(true);
 
@@ -185,27 +215,45 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
     private void updateVideoGrid(Observable<MediaGroup> group) {
         Log.d(TAG, "updateVideoGrid: Start loading group...");
 
+        disposeActions();
+
         getView().showProgressBar(true);
 
         mUpdateAction = group
                 .subscribeOn(Schedulers.newThread())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        mediaGroup -> {
-                            getView().update(VideoGroup.from(mediaGroup));
-
-                            // Hide loading as long as first group received
-                            if (mediaGroup.getMediaItems() != null) {
-                                getView().showProgressBar(false);
-                            }
-                        },
+                        this::updateGrid,
                         error -> Log.e(TAG, "updateGridHeader error: %s", error.getMessage()),
                         () -> getView().showProgressBar(false)
                 );
     }
 
+    public void updateGrid(MediaGroup mediaGroup) {
+        if (getView() == null) { // starting from outside (e.g. MediaServiceManager)
+            disposeActions();
+            mVideoItem = null;
+            mMediaGroup = mediaGroup;
+            ViewManager.instance(getContext()).startView(ChannelUploadsView.class);
+            return;
+        }
+
+        if (ViewManager.instance(getContext()).getTopView() != ChannelUploadsView.class) {
+            ViewManager.instance(getContext()).startView(ChannelUploadsView.class);
+        }
+
+        getView().update(VideoGroup.from(mediaGroup));
+
+        // Hide loading as long as first group received
+        if (mediaGroup.getMediaItems() != null) {
+            getView().showProgressBar(false);
+        }
+    }
+
     private void updateVideoGrid(MediaItem mediaItem, VideoGroupCallback callback) {
         Log.d(TAG, "updateVideoGrid: Start loading group...");
+
+        disposeActions();
 
         Observable<MediaGroup> group = mGroupManager.getGroupObserve(mediaItem);
 
@@ -220,5 +268,30 @@ public class ChannelUploadsPresenter extends BasePresenter<ChannelUploadsView> i
 
     public interface VideoGroupCallback {
         void onGroup(MediaGroup mediaGroup);
+    }
+
+    /**
+     * Playlist usually is the first row with media items.<br/>
+     * NOTE: before playlist may be the video description row
+     */
+    private MediaGroup findPlaylistRow(MediaItemMetadata mediaItemMetadata) {
+        if (mediaItemMetadata == null || mediaItemMetadata.getSuggestions() == null) {
+            return null;
+        }
+
+        for (MediaGroup group : mediaItemMetadata.getSuggestions()) {
+            List<MediaItem> mediaItems = group.getMediaItems();
+            if (mediaItems != null && mediaItems.size() > 0) {
+                return group;
+            }
+        }
+
+        return null;
+    }
+
+    public void clear() {
+        if (getView() != null) {
+            getView().clear();
+        }
     }
 }

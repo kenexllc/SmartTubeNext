@@ -10,41 +10,78 @@ import com.liskovsoft.appupdatechecker2.other.downloadmanager.DownloadManagerTas
 import com.liskovsoft.appupdatechecker2.other.downloadmanager.DownloadManagerTask.DownloadListener;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.R;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionItem;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
+import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 
 abstract class BridgePresenter extends BasePresenter<Void> {
     private static final String TAG = BridgePresenter.class.getSimpleName();
+    private final GeneralData mGeneralData;
     private boolean mRemoveOldApkFirst;
-    private final DownloadListener listener = new DownloadListener() {
+    private String mBridgePath;
+    private final DownloadListener mListener = new DownloadListener() {
         @Override
         public void onDownloadCompleted(Uri uri) {
-            Helpers.installPackage(getContext(), uri.getPath());
+            mBridgePath = uri.getPath();
+
+            if (mBridgePath != null) {
+                startDialog();
+            }
         }
     };
 
     public BridgePresenter(Context context) {
         super(context);
+
+        mGeneralData = GeneralData.instance(context);
     }
 
     public void start() {
-        
-    }
-
-    private void runBridgeInstaller() {
         if (!checkLauncher()) {
             return;
         }
 
+        if (!mGeneralData.isBridgeCheckEnabled()) {
+            return;
+        }
+        
+        runBridgeInstaller();
+    }
+
+    private void startDialog() {
+        AppDialogPresenter settingsPresenter = AppDialogPresenter.instance(getContext());
+        settingsPresenter.clear();
+
+        OptionItem updateCheckOption = UiOptionItem.from(
+                getContext().getString(R.string.enable_voice_search),
+                option -> installBridgeIfNeeded());
+
+        settingsPresenter.appendSingleSwitch(
+                UiOptionItem.from(getContext().getString(R.string.show_again),
+                optionItem -> mGeneralData.enableBridgeCheck(optionItem.isSelected()),
+                mGeneralData.isBridgeCheckEnabled())
+        );
+        settingsPresenter.appendSingleButton(updateCheckOption);
+
+        settingsPresenter.showDialog(getContext().getString(R.string.enable_voice_search));
+    }
+
+    private void runBridgeInstaller() {
         PackageInfo info = getPackageSignature(getPackageName());
 
-        if (info != null) { // bridge installed
-            if (Helpers.isUserApp(info) && info.signatures[0].hashCode() != getPackageSignatureHash()) {
-                // Original YouTube installed
+        if (info != null) { // bridge or original tube installed
+            if (Helpers.isUserApp(info) && !Helpers.equalsAny(info.signatures[0].hashCode(), (Object[]) getPackageSignatureHash())) {
+                // Original tube installed
                 mRemoveOldApkFirst = true;
-                installBridgeIfNeeded();
+                // Download apk first and start dialog when download complete
+                downloadPackageFromUrl(getContext(), getPackageUrl());
             }
-        } else { // bridge not installed
-            installBridgeIfNeeded();
+        } else { // not installed
+            // Download apk first and start dialog when download complete
+            downloadPackageFromUrl(getContext(), getPackageUrl());
         }
     }
 
@@ -61,13 +98,18 @@ abstract class BridgePresenter extends BasePresenter<Void> {
         return packageInfo;
     }
 
-    private void installPackageFromUrl(Context context, String pkgUrl) {
+    private void downloadPackageFromUrl(Context context, String pkgUrl) {
         Log.d(TAG, "Installing bridge apk");
 
-        DownloadManagerTask task = new DownloadManagerTask(listener, context, pkgUrl);
+        DownloadManagerTask task = new DownloadManagerTask(mListener, context, pkgUrl);
         task.execute();
     }
 
+    private void installPackageFromPath(Context context) {
+        Helpers.installPackage(context, mBridgePath);
+    }
+
+    // TODO: not implemented
     //@Override
     //public void onActivityResult(int requestCode, int resultCode, Intent data) {
     //    if (requestCode == Helpers.REMOVE_PACKAGE_CODE) {
@@ -81,12 +123,12 @@ abstract class BridgePresenter extends BasePresenter<Void> {
                 Helpers.removePackageAndGetResult((Activity) getContext(), getPackageName());
             }
         } else {
-            installPackageFromUrl(getContext(), getPackageUrl());
+            installPackageFromPath(getContext());
         }
     }
 
     protected abstract String getPackageName();
     protected abstract String getPackageUrl();
-    protected abstract int getPackageSignatureHash();
+    protected abstract Integer[] getPackageSignatureHash();
     protected abstract boolean checkLauncher();
 }

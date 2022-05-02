@@ -8,4 +8,6 @@ public interface PlaybackController extends PlaybackEngineController, PlaybackUI
     void setVideo(Video item);
     Video getVideo();
     void finish();
+    void finishReally();
+    void setAfrRunning(boolean isRunning);
 }

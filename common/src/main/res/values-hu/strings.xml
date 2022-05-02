@@ -58,7 +58,7 @@
     <string name="default_lang">Alap</string>
     <string name="dialog_select_language">Alkalmazás nyelve</string>
     <string name="subtitle_default">Alap</string>
-    <string name="subtitle_semi_transparent_bg">Félig áttetszó háttér</string>
+    <string name="subtitle_white_semi_transparent">Félig áttetszó háttér</string>
     <string name="subtitle_style">Felirat stílus</string>
     <string name="subtitle_language">Felirat nyelv</string>
     <string name="action_search">Keresés indítása</string>
@@ -77,7 +77,7 @@
     <string name="player_only_pause">Csak szünet</string>
     <string name="check_for_updates">Frissítés keresése</string>
     <string name="update_not_found">A legújabb verziót használja</string>
-    <string name="update_in_progess">Várj…</string>
+    <string name="update_in_progress">Várj…</string>
     <string name="player_ui_hide_behavior">A felhasználói felület automatikus elrejtése</string>
     <string name="option_never">Soha</string>
     <string name="side_panel_sections">Szakaszok beállítása</string>
@@ -113,8 +113,8 @@
     <string name="repeat_mode_none">Szünet minden videó után</string>
     <string name="subscribed_to_channel">Feliratkozott a csatornára</string>
     <string name="unsubscribed_from_channel">Leliratkozott a csatornáról</string>
-    <string name="subtitle_yellow">Sárga</string>
-    <string name="subtitle_black_bg">Fekete háttér</string>
+    <string name="subtitle_yellow_transparent">Sárga</string>
+    <string name="subtitle_white_black">Fekete háttér</string>
     <string name="player_seek_preview">Előnézet gyorstekeréskor</string>
     <string name="color_scheme_dark_grey_oled">Sötétszürke (OLED)</string>
     <string name="channels_section_sorting">Csatornaszekciók rendezése</string>

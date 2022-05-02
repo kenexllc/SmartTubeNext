@@ -14,9 +14,9 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.Conten
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.HQDialogManager;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.PlayerUIManager;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.RemoteControlManager;
-import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.StateUpdater;
-import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.SuggestionsLoader;
-import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.VideoLoader;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.VideoStateManager;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.SuggestionsLoaderManager;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers.VideoLoaderManager;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.FormatItem;
 
 import java.lang.ref.WeakReference;
@@ -42,10 +42,10 @@ public class MainPlayerEventBridge implements PlayerEventListener {
             mActivity = new WeakReference<>((Activity) context);
         }
 
-        SuggestionsLoader suggestionsLoader = new SuggestionsLoader();
-        VideoLoader videoLoader = new VideoLoader(suggestionsLoader);
+        SuggestionsLoaderManager suggestionsLoader = new SuggestionsLoaderManager();
+        VideoLoaderManager videoLoader = new VideoLoaderManager(suggestionsLoader);
         PlayerUIManager uiManager = new PlayerUIManager(videoLoader);
-        StateUpdater stateUpdater = new StateUpdater();
+        VideoStateManager stateUpdater = new VideoStateManager();
         ContentBlockManager contentBlockManager = new ContentBlockManager();
 
         RemoteControlManager commandManager = new RemoteControlManager(context, suggestionsLoader, videoLoader);
@@ -210,8 +210,8 @@ public class MainPlayerEventBridge implements PlayerEventListener {
     }
     
     @Override
-    public void onSeek() {
-        process(PlayerEventListener::onSeek);
+    public void onSeekEnd() {
+        process(PlayerEventListener::onSeekEnd);
     }
 
     @Override
@@ -279,13 +279,13 @@ public class MainPlayerEventBridge implements PlayerEventListener {
     }
 
     @Override
-    public void onThumbsDownClicked(boolean thumbsDown) {
-        process(listener -> listener.onThumbsDownClicked(thumbsDown));
+    public void onDislikeClicked(boolean dislike) {
+        process(listener -> listener.onDislikeClicked(dislike));
     }
 
     @Override
-    public void onThumbsUpClicked(boolean thumbsUp) {
-        process(listener -> listener.onThumbsUpClicked(thumbsUp));
+    public void onLikeClicked(boolean like) {
+        process(listener -> listener.onLikeClicked(like));
     }
 
     @Override
@@ -326,6 +326,21 @@ public class MainPlayerEventBridge implements PlayerEventListener {
     @Override
     public void onVideoSpeedClicked() {
         process(PlayerUiEventListener::onVideoSpeedClicked);
+    }
+
+    @Override
+    public void onSeekIntervalClicked() {
+        process(PlayerUiEventListener::onSeekIntervalClicked);
+    }
+
+    @Override
+    public void onVideoInfoClicked() {
+        process(PlayerUiEventListener::onVideoInfoClicked);
+    }
+
+    @Override
+    public void onShareLinkClicked() {
+        process(PlayerUiEventListener::onShareLinkClicked);
     }
 
     @Override

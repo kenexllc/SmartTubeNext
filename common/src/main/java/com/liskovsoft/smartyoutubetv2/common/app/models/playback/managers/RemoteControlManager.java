@@ -1,21 +1,22 @@
 package com.liskovsoft.smartyoutubetv2.common.app.models.playback.managers;
 
 import android.content.Context;
+import android.view.KeyEvent;
 import androidx.annotation.Nullable;
 import com.liskovsoft.mediaserviceinterfaces.MediaService;
 import com.liskovsoft.mediaserviceinterfaces.RemoteManager;
 import com.liskovsoft.mediaserviceinterfaces.data.Command;
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.PlayerEventListenerHelper;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controller.PlaybackEngineController;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter;
-import com.liskovsoft.smartyoutubetv2.common.misc.MotherActivity;
-import com.liskovsoft.smartyoutubetv2.common.misc.ScreensaverManager;
+import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.RemoteControlData;
-import com.liskovsoft.smartyoutubetv2.common.utils.RxUtils;
+import com.liskovsoft.sharedutils.rx.RxUtils;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
 import io.reactivex.android.schedulers.AndroidSchedulers;
@@ -26,16 +27,20 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
     private static final String TAG = RemoteControlManager.class.getSimpleName();
     private final RemoteManager mRemoteManager;
     private final RemoteControlData mRemoteControlData;
-    private final SuggestionsLoader mSuggestionsLoader;
-    private final VideoLoader mVideoLoader;
+    private final SuggestionsLoaderManager mSuggestionsLoader;
+    private final VideoLoaderManager mVideoLoader;
     private Disposable mListeningAction;
     private Disposable mPostStartPlayAction;
     private Disposable mPostStateAction;
     private Disposable mPostVolumeAction;
     private Video mVideo;
     private boolean mConnected;
+    private int mIsGlobalVolumeWorking = -1;
+    private long mNewVideoPositionMs;
+    private Disposable mActionDown;
+    private Disposable mActionUp;
 
-    public RemoteControlManager(Context context, SuggestionsLoader suggestionsLoader, VideoLoader videoLoader) {
+    public RemoteControlManager(Context context, SuggestionsLoaderManager suggestionsLoader, VideoLoaderManager videoLoader) {
         MediaService mediaService = YouTubeMediaService.instance();
         mSuggestionsLoader = suggestionsLoader;
         mVideoLoader = videoLoader;
@@ -65,6 +70,11 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
 
     @Override
     public void onVideoLoaded(Video item) {
+        if (mNewVideoPositionMs > 0) {
+            getController().setPositionMs(mNewVideoPositionMs);
+            mNewVideoPositionMs = 0;
+        }
+
         postStartPlaying(item, getController().getPlay());
         mVideo = item;
     }
@@ -223,18 +233,15 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
         }
 
         Log.d(TAG, "Is remote connected: %s, command type: %s", mConnected, command.getType());
-        
-        //if (getController() != null && getController().getVideo() != null) {
-        //    getController().getVideo().isRemote = mConnected;
-        //}
 
         switch (command.getType()) {
             case Command.TYPE_OPEN_VIDEO:
                 if (getController() != null) {
-                    getController().showControls(false);
+                    getController().showOverlay(false);
                 }
                 Utils.movePlayerToForeground(getActivity());
                 Video newVideo = Video.from(command.getVideoId(), command.getPlaylistId(), command.getPlaylistIndex());
+                mNewVideoPositionMs = command.getCurrentTimeMs();
                 openNewVideo(newVideo);
                 break;
             case Command.TYPE_UPDATE_PLAYLIST:
@@ -242,13 +249,15 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                     Video video = getController().getVideo();
                     if (video != null) {
                         video.playlistId = command.getPlaylistId();
+                        video.playlistParams = null;
+                        video.isRemote = true;
                         mSuggestionsLoader.loadSuggestions(video);
                     }
                 }
                 break;
             case Command.TYPE_SEEK:
                 if (getController() != null) {
-                    getController().showControls(false);
+                    getController().showOverlay(false);
                     Utils.movePlayerToForeground(getActivity());
                     getController().setPositionMs(command.getCurrentTimeMs());
                     postSeek(command.getCurrentTimeMs());
@@ -265,7 +274,6 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 } else {
                     openNewVideo(mVideo);
                 }
-                showHideScreensaver(true);
                 break;
             case Command.TYPE_PAUSE:
                 if (getController() != null) {
@@ -276,7 +284,6 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 } else {
                     openNewVideo(mVideo);
                 }
-                showHideScreensaver(true);
                 break;
             case Command.TYPE_NEXT:
                 if (getBridge() != null) {
@@ -285,7 +292,6 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 } else {
                     openNewVideo(mVideo);
                 }
-                showHideScreensaver(true);
                 break;
             case Command.TYPE_PREVIOUS:
                 if (getBridge() != null && getController() != null) {
@@ -295,7 +301,6 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 } else {
                     openNewVideo(mVideo);
                 }
-                showHideScreensaver(true);
                 break;
             case Command.TYPE_GET_STATE:
                 if (getController() != null) {
@@ -307,49 +312,84 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 break;
             case Command.TYPE_VOLUME:
                 //Utils.setGlobalVolume(getActivity(), command.getVolume());
-                if (getController() != null) {
-                    getController().setVolume(command.getVolume() / 100f);
-                }
+                setVolume(command.getVolume());
+
+                //postVolumeChange(Utils.getGlobalVolume(getActivity()));
+                postVolumeChange(getVolume()); // Just in case volume cannot be changed (e.g. Fire TV stick)
                 break;
             case Command.TYPE_STOP:
+                // Close player
                 if (getController() != null) {
                     getController().finish();
                 }
+                //// Finish the app
+                //if (getActivity() != null) {
+                //    ViewManager.instance(getActivity()).properlyFinishTheApp(getActivity());
+                //}
                 break;
             case Command.TYPE_CONNECTED:
-                if (getActivity() != null) {
-                    // NOTE: It's not a good idea to remember connection state (mConnected) at this point.
-                    //Utils.moveAppToForeground(getActivity());
-                    //MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_connected, command.getDeviceName()));
-                }
-                if (getController() != null) {
-                    postVolumeChange((int)(getController().getVolume() * 100));
-                }
+                // NOTE: there are possible false calls when mobile client unloaded from the memory.
+                //if (getActivity() != null && mRemoteControlData.isFinishOnDisconnectEnabled()) {
+                //    // NOTE: It's not a good idea to remember connection state (mConnected) at this point.
+                //    Utils.moveAppToForeground(getActivity());
+                //    MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_connected, command.getDeviceName()));
+                //}
                 break;
             case Command.TYPE_DISCONNECTED:
-                // Note: there are possible false calls when mobile client unloaded from the memory.
-                if (getActivity() != null) {
+                // NOTE: there are possible false calls when mobile client unloaded from the memory.
+                if (getActivity() != null && mRemoteControlData.isFinishOnDisconnectEnabled()) {
                     // NOTE: It's not a good idea to remember connection state (mConnected) at this point.
-                    //MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_disconnected, command.getDeviceName()));
-                }
-                if (getController() != null) {
-                    getController().setVolume(1);
+                    MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_disconnected, command.getDeviceName()));
+                    ViewManager.instance(getActivity()).properlyFinishTheApp(getActivity());
                 }
                 break;
-        }
+            case Command.TYPE_DPAD:
+                int key = KeyEvent.KEYCODE_UNKNOWN;
+                boolean isLongAction = false;
+                switch (command.getKey()) {
+                    case Command.KEY_UP:
+                        key = KeyEvent.KEYCODE_DPAD_UP;
+                        break;
+                    case Command.KEY_DOWN:
+                        key = KeyEvent.KEYCODE_DPAD_DOWN;
+                        break;
+                    case Command.KEY_LEFT:
+                        key = KeyEvent.KEYCODE_DPAD_LEFT;
+                        isLongAction = true; // enable fast seeking
+                        break;
+                    case Command.KEY_RIGHT:
+                        key = KeyEvent.KEYCODE_DPAD_RIGHT;
+                        isLongAction = true; // enable fast seeking
+                        break;
+                    case Command.KEY_ENTER:
+                        key = KeyEvent.KEYCODE_DPAD_CENTER;
+                        break;
+                    case Command.KEY_BACK:
+                        key = KeyEvent.KEYCODE_BACK;
+                        break;
+                }
+                if (key != KeyEvent.KEYCODE_UNKNOWN) {
+                    RxUtils.disposeActions(mActionDown, mActionUp);
 
-        //postVolumeChange(Utils.getGlobalVolume(getActivity()));
-        if (getController() != null) {
-            postVolumeChange((int)(getController().getVolume() * 100));
+                    final int resultKey = key;
+
+                    if (isLongAction) {
+                        mActionDown = RxUtils.runAsync(() ->
+                                Utils.sendKey(new KeyEvent(KeyEvent.ACTION_DOWN, resultKey)));
+                        mActionUp = RxUtils.runAsync(() ->
+                                Utils.sendKey(new KeyEvent(KeyEvent.ACTION_UP, resultKey)), 500);
+                    } else {
+                        mActionDown = RxUtils.runAsync(() -> Utils.sendKey(resultKey));
+                    }
+                }
+                break;
         }
     }
 
     @Override
     public boolean onKeyDown(int keyCode) {
         //postVolumeChange(Utils.getGlobalVolume(getActivity()));
-        if (getController() != null) {
-            postVolumeChange((int)(getController().getVolume() * 100));
-        }
+        postVolumeChange(getVolume());
 
         return false;
     }
@@ -358,24 +398,38 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
         if (Video.equals(mVideo, newVideo) && Utils.isPlayerInForeground(getActivity())) { // same video already playing
             mVideo.playlistId = newVideo.playlistId;
             mVideo.playlistIndex = newVideo.playlistIndex;
+            mVideo.playlistParams = newVideo.playlistParams;
+            if (mNewVideoPositionMs > 0) {
+                getController().setPositionMs(mNewVideoPositionMs);
+                mNewVideoPositionMs = 0;
+            }
             postStartPlaying(mVideo, getController().isPlaying());
         } else if (newVideo != null) {
             newVideo.isRemote = true;
             PlaybackPresenter.instance(getActivity()).openVideo(newVideo);
         }
-
-        showHideScreensaver(true);
     }
 
-    private void showHideScreensaver(boolean show) {
-        if (getActivity() instanceof MotherActivity) {
-            ScreensaverManager screensaverManager = ((MotherActivity) getActivity()).getScreensaverManager();
+    /**
+     * Volume: 0 - 100
+     */
+    private int getVolume() {
+        if (getActivity() != null) {
+            return Utils.getGlobalVolume(getActivity());
+        }
 
-            if (show) {
-                screensaverManager.enable();
-            } else {
-                screensaverManager.disable();
-            }
+        return 100;
+    }
+
+    /**
+     * Volume: 0 - 100
+     */
+    private void setVolume(int volume) {
+        if (getActivity() != null) {
+            Utils.setGlobalVolume(getActivity(), volume);
+            // Check that volume is set.
+            // Because global value may not be supported (see FireTV Stick).
+            MessageHelpers.showMessageThrottled(getActivity(), getActivity().getString(R.string.volume, Utils.getGlobalVolume(getActivity())));
         }
     }
 }

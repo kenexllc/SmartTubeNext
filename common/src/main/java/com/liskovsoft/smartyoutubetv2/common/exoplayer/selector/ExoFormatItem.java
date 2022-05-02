@@ -35,7 +35,7 @@ public class ExoFormatItem implements FormatItem {
     private String mFormatId;
     private boolean mIsPreset;
 
-    public static List<FormatItem> from(Set<MediaTrack> mediaTracks) {
+    synchronized public static List<FormatItem> from(Set<MediaTrack> mediaTracks) {
         if (mediaTracks == null) {
             return null;
         }
@@ -174,7 +174,7 @@ public class ExoFormatItem implements FormatItem {
             case TYPE_AUDIO:
                 // Fake format. It's used in app internal comparison routine.
                 mediaTrack.format = Format.createAudioSampleFormat(
-                        id, null, codecs, -1, -1,0, 0, null, null, 0, null);
+                        id, null, codecs, -1, -1,0, 0, null, null, 0, language);
                 break;
             case TYPE_SUBTITLE:
                 // Fake format. It's used in app internal comparison routine.
@@ -213,7 +213,7 @@ public class ExoFormatItem implements FormatItem {
     /**
      * "2560,1440,30,vp9"
      */
-    public static ExoFormatItem fromVideoPreset(String spec) {
+    public static ExoFormatItem fromVideoSpec(String spec, boolean isPreset) {
         if (spec == null) {
             return null;
         }
@@ -229,10 +229,10 @@ public class ExoFormatItem implements FormatItem {
         float frameRate = Helpers.parseFloat(split[2]);
         String codec = split[3];
 
-        return from(TYPE_VIDEO, TrackSelectorManager.RENDERER_INDEX_VIDEO, null, codec, width, height, frameRate,null,true);
+        return from(TYPE_VIDEO, TrackSelectorManager.RENDERER_INDEX_VIDEO, null, codec, width, height, frameRate,null,isPreset);
     }
 
-    public static FormatItem fromVideoData(int resolution, int format, int frameRate) {
+    public static FormatItem fromVideoParams(int resolution, int format, int frameRate) {
         ExoFormatItem formatItem = new ExoFormatItem();
         MediaTrack mediaTrack = MediaTrack.forRendererIndex(TrackSelectorManager.RENDERER_INDEX_VIDEO);
         formatItem.mTrack = mediaTrack;
@@ -303,7 +303,24 @@ public class ExoFormatItem implements FormatItem {
         return formatItem;
     }
 
-    public static FormatItem fromSubtitleData(String langCode) {
+    public static ExoFormatItem fromAudioSpecs(String spec) {
+        if (spec == null) {
+            return null;
+        }
+
+        String[] split = spec.split(",");
+
+        if (split.length != 2) {
+            return null;
+        }
+
+        String codec = Helpers.parseStr(split[0]);
+        String language = Helpers.parseStr(split[1]);
+
+        return from(TYPE_AUDIO, TrackSelectorManager.RENDERER_INDEX_AUDIO, null, codec, 0, 0, 0, language, false);
+    }
+
+    public static FormatItem fromSubtitleParams(String langCode) {
         if (langCode != null) {
             // Only first part or lang code is accepted.
             // E.g.: en, ru...

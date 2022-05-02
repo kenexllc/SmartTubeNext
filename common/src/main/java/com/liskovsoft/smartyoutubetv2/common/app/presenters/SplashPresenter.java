@@ -3,19 +3,25 @@ package com.liskovsoft.smartyoutubetv2.common.app.presenters;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.sharedutils.rx.RxUtils;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.base.BasePresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.AccountSelectionPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.views.SplashView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
-import com.liskovsoft.smartyoutubetv2.common.misc.ProxyManager;
+import com.liskovsoft.smartyoutubetv2.common.openvpn.OpenVPNManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
+import com.liskovsoft.smartyoutubetv2.common.proxy.ProxyManager;
 import com.liskovsoft.smartyoutubetv2.common.utils.IntentExtractor;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
+import com.liskovsoft.youtubeapi.service.YouTubeMediaService;
+import io.reactivex.disposables.Disposable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,9 +31,9 @@ public class SplashPresenter extends BasePresenter<SplashView> {
     private static final String TAG = SplashPresenter.class.getSimpleName();
     @SuppressLint("StaticFieldLeak")
     private static SplashPresenter sInstance;
-    private static boolean mRunOnce;
+    private static boolean sRunOnce;
     private final List<IntentProcessor> mIntentChain = new ArrayList<>();
-    private ProxyManager mProxyManager;
+    private Disposable mRefreshCachePeriodicAction;
 
     private interface IntentProcessor {
         boolean process(Intent intent);
@@ -47,32 +53,38 @@ public class SplashPresenter extends BasePresenter<SplashView> {
         return sInstance;
     }
 
-    public void unhold() {
-        mRunOnce = false;
+    public static void unhold() {
         sInstance = null;
+        sRunOnce = false;
     }
 
     @Override
     public void onViewInitialized() {
         applyRunOnceTasks();
 
+        runRefreshCachePeriodicTask();
         showAccountSelection();
 
-        applyNewIntent(getView().getNewIntent());
+        if (getView() != null) {
+            applyNewIntent(getView().getNewIntent());
+        }
     }
 
     private void applyRunOnceTasks() {
-        if (!mRunOnce) {
+        if (!sRunOnce) {
             //checkTouchSupport(); // Not working?
             // Need to be the first line and executed on earliest stage once.
             // Inits service language and context.
-            Utils.initGlobalData(getContext());
+            //Utils.initGlobalData(getContext()); // Init already done in BasePresenter
             initIntentChain();
             updateChannels();
             getBackupDataOnce();
             runRemoteControlTasks();
+            //setupKeepAlive();
             configureProxy();
-            mRunOnce = true;
+            configureOpenVPN();
+            initVideoStateService();
+            sRunOnce = true;
         }
     }
 
@@ -108,9 +120,28 @@ public class SplashPresenter extends BasePresenter<SplashView> {
 
     private void configureProxy() {
         if (getContext() != null && GeneralData.instance(getContext()).isProxyEnabled()) {
-            mProxyManager = ProxyManager.instance(getContext());
-            mProxyManager.enableProxy(true);
+            new ProxyManager(getContext()).configureSystemProxy();
         }
+    }
+
+    private void configureOpenVPN() {
+        if (getContext() != null && GeneralData.instance(getContext()).isVPNEnabled()) {
+            OpenVPNManager.instance(getContext(), null).configureOpenVPN();
+        }
+    }
+
+    private void initVideoStateService() {
+        if (getContext() != null) {
+            VideoStateService.instance(getContext());
+        }
+    }
+
+    private void runRefreshCachePeriodicTask() {
+        if (RxUtils.isAnyActionRunning(mRefreshCachePeriodicAction)) {
+            return;
+        }
+
+        mRefreshCachePeriodicAction = RxUtils.startInterval(YouTubeMediaService.instance()::refreshCacheIfNeeded, 30 * 60);
     }
 
     private void checkTouchSupport() {
@@ -187,14 +218,15 @@ public class SplashPresenter extends BasePresenter<SplashView> {
             String videoId = IntentExtractor.extractVideoId(intent);
 
             if (videoId != null) {
-                PlaybackPresenter playbackPresenter = PlaybackPresenter.instance(getContext());
-                playbackPresenter.openVideo(videoId);
-
                 ViewManager viewManager = ViewManager.instance(getContext());
 
-                if (GeneralData.instance(getContext()).isReturnToLauncherEnabled()) {
+                // Also, ensure that we're not opening tube link from description dialog
+                if (GeneralData.instance(getContext()).isReturnToLauncherEnabled() && !AppDialogPresenter.instance(getContext()).isDialogShown()) {
                     viewManager.setSinglePlayerMode(true);
                 }
+
+                PlaybackPresenter playbackPresenter = PlaybackPresenter.instance(getContext());
+                playbackPresenter.openVideo(videoId);
 
                 return true;
             }
@@ -214,13 +246,34 @@ public class SplashPresenter extends BasePresenter<SplashView> {
             return false;
         });
 
+        // NOTE: doesn't work very well. E.g. there's problems with focus or conflicts with 'boot to' section option.
+        //mIntentChain.add(intent -> {
+        //    int sectionId = -1;
+        //
+        //    // ATV channel icon clicked
+        //    if (IntentExtractor.isSubscriptionsUrl(intent)) {
+        //        sectionId = MediaGroup.TYPE_SUBSCRIPTIONS;
+        //    } else if (IntentExtractor.isHistoryUrl(intent)) {
+        //        sectionId = MediaGroup.TYPE_HISTORY;
+        //    } else if (IntentExtractor.isRecommendedUrl(intent)) {
+        //        sectionId = MediaGroup.TYPE_HOME;
+        //    }
+        //
+        //    if (sectionId != -1) {
+        //        BrowsePresenter.instance(getContext()).selectSection(sectionId);
+        //        return true;
+        //    }
+        //
+        //    return false;
+        //});
+
         // Should come last
         mIntentChain.add(intent -> {
             ViewManager viewManager = ViewManager.instance(getContext());
             viewManager.startDefaultView();
 
             // For debug purpose when using ATV bridge.
-            if (IntentExtractor.hasData(intent) && !IntentExtractor.isChannelUrl(intent)) {
+            if (IntentExtractor.hasData(intent) && !IntentExtractor.isChannelUrl(intent) && !IntentExtractor.isRootUrl(intent)) {
                 MessageHelpers.showLongMessage(getContext(), String.format("Can't process intent: %s", Helpers.toString(intent)));
             }
 
@@ -235,47 +288,4 @@ public class SplashPresenter extends BasePresenter<SplashView> {
             }
         }
     }
-
-    //private void applyNewIntent(Intent intent) {
-    //    String videoId = IntentExtractor.extractVideoId(intent);
-    //
-    //    if (videoId != null) {
-    //        PlaybackPresenter playbackPresenter = PlaybackPresenter.instance(getContext());
-    //        playbackPresenter.openVideo(videoId);
-    //
-    //        ViewManager viewManager = ViewManager.instance(getContext());
-    //
-    //        if (GeneralData.instance(getContext()).isReturnToLauncherEnabled()) {
-    //            viewManager.setSinglePlayerMode(true);
-    //        }
-    //    } else {
-    //        String searchText = IntentExtractor.extractSearchText(intent);
-    //
-    //        if (searchText != null || IntentExtractor.isStartVoiceCommand(intent)) {
-    //            SearchPresenter searchPresenter = SearchPresenter.instance(getContext());
-    //            searchPresenter.startSearch(searchText);
-    //        } else {
-    //            String channelId = IntentExtractor.extractChannelId(intent);
-    //
-    //            if (channelId != null) {
-    //                ChannelPresenter channelPresenter = ChannelPresenter.instance(getContext());
-    //                channelPresenter.openChannel(channelId);
-    //            } else {
-    //                String backupData = getBackupDataOnce();
-    //                if (backupData != null) {
-    //                    PlaybackPresenter playbackPresenter = PlaybackPresenter.instance(getContext());
-    //                    playbackPresenter.openVideo(backupData);
-    //                } else {
-    //                    ViewManager viewManager = ViewManager.instance(getContext());
-    //                    viewManager.startDefaultView();
-    //
-    //                    // For debug purpose when using ATV bridge.
-    //                    if (IntentExtractor.hasData(intent) && !IntentExtractor.isChannelUrl(intent)) {
-    //                        MessageHelpers.showLongMessage(getContext(), String.format("Can't process intent: %s", Helpers.toString(intent)));
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
 }

@@ -4,9 +4,9 @@ import android.content.Context;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 
 public class ATVBridgePresenter extends BridgePresenter {
-    private static final int ATV_YOUTUBE_PKG_HASH = 1430778939;
+    private static final Integer[] ATV_YOUTUBE_PKG_HASH = {1430778939, -672009692};
     private static final String ATV_YOUTUBE_PKG_NAME = "com.google.android.youtube.tv";
-    private static final String ATV_BRIDGE_PKG_URL = "https://github.com/yuliskov/SmartYouTubeTV/releases/download/stable/ATV_SYTV_Bridge.apk";
+    private static final String ATV_BRIDGE_PKG_URL = "https://github.com/yuliskov/SmartTubeNext/releases/download/latest/ATV_SYTV_Bridge.apk";
     private static ATVBridgePresenter sInstance;
 
     public ATVBridgePresenter(Context context) {
@@ -23,7 +23,7 @@ public class ATVBridgePresenter extends BridgePresenter {
         return sInstance;
     }
 
-    public static void unhold() {
+    public void unhold() {
         sInstance = null;
     }
 
@@ -38,7 +38,7 @@ public class ATVBridgePresenter extends BridgePresenter {
     }
 
     @Override
-    protected int getPackageSignatureHash() {
+    protected Integer[] getPackageSignatureHash() {
         return ATV_YOUTUBE_PKG_HASH;
     }
 

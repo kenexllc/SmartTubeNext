@@ -11,6 +11,8 @@ public class RemoteControlData extends DataChangeBase {
     private final Context mContext;
     private final AppPrefs mAppPrefs;
     private boolean mIsDeviceLinkEnabled;
+    private boolean mIsRunInBackgroundEnabled;
+    private boolean mIsFinishOnDisconnectEnabled;
 
     private RemoteControlData(Context context) {
         mContext = context;
@@ -32,7 +34,26 @@ public class RemoteControlData extends DataChangeBase {
     }
 
     public boolean isDeviceLinkEnabled() {
-        return mIsDeviceLinkEnabled;
+        // Merge device link and background service (saves memory)
+        return isRunInBackgroundEnabled();
+    }
+
+    public void enableRunInBackground(boolean select) {
+        mIsRunInBackgroundEnabled = select;
+        persistState();
+    }
+
+    public boolean isRunInBackgroundEnabled() {
+        return mIsRunInBackgroundEnabled;
+    }
+
+    public void enableFinishOnDisconnect(boolean enable) {
+        mIsFinishOnDisconnectEnabled = enable;
+        persistState();
+    }
+
+    public boolean isFinishOnDisconnectEnabled() {
+        return mIsFinishOnDisconnectEnabled;
     }
 
     private void restoreState() {
@@ -40,11 +61,13 @@ public class RemoteControlData extends DataChangeBase {
 
         String[] split = Helpers.splitObjectLegacy(data);
 
-        mIsDeviceLinkEnabled = Helpers.parseBoolean(split, 0, true);
+        mIsDeviceLinkEnabled = Helpers.parseBoolean(split, 1, true);
+        mIsRunInBackgroundEnabled = Helpers.parseBoolean(split, 2, false);
+        mIsFinishOnDisconnectEnabled = Helpers.parseBoolean(split, 3, false);
     }
 
     protected void persistState() {
-        mAppPrefs.setData(DEVICE_LINK_DATA, Helpers.mergeObject(mIsDeviceLinkEnabled));
+        mAppPrefs.setData(DEVICE_LINK_DATA, Helpers.mergeObject(null, mIsDeviceLinkEnabled, mIsRunInBackgroundEnabled, mIsFinishOnDisconnectEnabled));
 
         super.persistState();
     }

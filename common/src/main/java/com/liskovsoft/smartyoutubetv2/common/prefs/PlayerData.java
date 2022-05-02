@@ -2,8 +2,11 @@ package com.liskovsoft.smartyoutubetv2.common.prefs;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.os.Build;
+import android.os.Build.VERSION;
 import com.google.android.exoplayer2.text.CaptionStyleCompat;
 import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.sharedutils.locale.LocaleUtility;
 import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controller.PlaybackEngineController;
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.FormatItem;
@@ -11,7 +14,9 @@ import com.liskovsoft.smartyoutubetv2.common.exoplayer.other.SubtitleManager.Sub
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.ExoFormatItem;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class PlayerData {
     private static final String VIDEO_PLAYER_DATA = "video_player_data";
@@ -29,7 +34,7 @@ public class PlayerData {
     private int mOKButtonBehavior;
     private int mUIHideTimeoutSec;
     private boolean mIsAbsoluteDateEnabled;
-    private boolean mIsPauseOnSeekEnabled;
+    private boolean mIsSeekConfirmPauseEnabled;
     private boolean mIsClockEnabled;
     private boolean mIsGlobalClockEnabled;
     private boolean mIsRemainingTimeEnabled;
@@ -39,6 +44,7 @@ public class PlayerData {
     private FormatItem mSubtitleFormat;
     private int mVideoBufferType;
     private final List<SubtitleStyle> mSubtitleStyles = new ArrayList<>();
+    private final Map<String, FormatItem> mDefaultVideoFormats = new HashMap<>();
     private int mSubtitleStyleIndex;
     private int mVideoZoomMode;
     private float mVideoAspectRatio;
@@ -50,15 +56,27 @@ public class PlayerData {
     private int mAfrPauseSec;
     private int mAudioDelayMs;
     private boolean mIsRememberSpeedEnabled;
-    private boolean mIsLowQualityEnabled;
+    private boolean mIsLegacyCodecsForced;
     private int mPlaybackMode;
     private boolean mIsSonyTimerFixEnabled;
     private boolean mIsQualityInfoEnabled;
     private boolean mIsRememberSpeedEachEnabled;
+    private boolean mIsTimeCorrectionEnabled;
+    private boolean mIsGlobalEndingTimeEnabled;
+    private boolean mIsEndingTimeEnabled;
+    private boolean mIsDoubleRefreshRateEnabled;
+    private boolean mIsSeekConfirmPlayEnabled;
+    private int mStartSeekIncrementMs;
+    private float mSubtitleScale;
+    private float mPlayerVolume;
+    private boolean mIsTooltipsEnabled;
+    private float mSubtitlePosition;
+    private boolean mIsNumberKeySeekEnabled;
 
     private PlayerData(Context context) {
         mPrefs = AppPrefs.instance(context);
         initSubtitleStyles();
+        initDefaultFormats();
         restoreData();
     }
 
@@ -106,13 +124,22 @@ public class PlayerData {
         return mSeekPreviewMode;
     }
 
-    public void enablePauseOnSeek(boolean enable) {
-        mIsPauseOnSeekEnabled = enable;
+    public void enableSeekConfirmPause(boolean enable) {
+        mIsSeekConfirmPauseEnabled = enable;
         persistData();
     }
 
-    public boolean isPauseOnSeekEnabled() {
-        return mIsPauseOnSeekEnabled;
+    public boolean isSeekConfirmPauseEnabled() {
+        return mIsSeekConfirmPauseEnabled;
+    }
+
+    public void enableSeekConfirmPlay(boolean enable) {
+        mIsSeekConfirmPlayEnabled = enable;
+        persistData();
+    }
+
+    public boolean isSeekConfirmPlayEnabled() {
+        return mIsSeekConfirmPlayEnabled;
     }
 
     public boolean isClockEnabled() {
@@ -133,12 +160,30 @@ public class PlayerData {
         persistData();
     }
 
+    public boolean isGlobalEndingTimeEnabled() {
+        return mIsGlobalEndingTimeEnabled;
+    }
+
+    public void enableGlobalEndingTime(boolean enable) {
+        mIsGlobalEndingTimeEnabled = enable;
+        persistData();
+    }
+
     public boolean isRemainingTimeEnabled() {
         return mIsRemainingTimeEnabled;
     }
 
     public void enableRemainingTime(boolean enable) {
         mIsRemainingTimeEnabled = enable;
+        persistData();
+    }
+
+    public boolean isEndingTimeEnabled() {
+        return mIsEndingTimeEnabled;
+    }
+
+    public void enableEndingTime(boolean enable) {
+        mIsEndingTimeEnabled = enable;
         persistData();
     }
 
@@ -189,12 +234,12 @@ public class PlayerData {
         persistData();
     }
 
-    public boolean isLowQualityEnabled() {
-        return mIsLowQualityEnabled;
+    public boolean isLegacyCodecsForced() {
+        return mIsLegacyCodecsForced;
     }
 
-    public void enableLowQuality(boolean enable) {
-        mIsLowQualityEnabled = enable;
+    public void forceLegacyCodecs(boolean enable) {
+        mIsLegacyCodecsForced = enable;
         persistData();
     }
 
@@ -231,6 +276,33 @@ public class PlayerData {
 
     public void setAfrPauseSec(int pauseSec) {
         mAfrPauseSec = pauseSec;
+        persistData();
+    }
+
+    public boolean isDoubleRefreshRateEnabled() {
+        return mIsDoubleRefreshRateEnabled;
+    }
+
+    public void setDoubleRefreshRateEnabled(boolean enabled) {
+        mIsDoubleRefreshRateEnabled = enabled;
+        persistData();
+    }
+
+    public boolean isTooltipsEnabled() {
+        return mIsTooltipsEnabled;
+    }
+
+    public void enableTooltips(boolean enable) {
+        mIsTooltipsEnabled = enable;
+        persistData();
+    }
+
+    public boolean isNumberKeySeekEnabled() {
+        return mIsNumberKeySeekEnabled;
+    }
+
+    public void enableNumberKeySeek(boolean enable) {
+        mIsNumberKeySeekEnabled = enable;
         persistData();
     }
 
@@ -294,6 +366,33 @@ public class PlayerData {
         persistData();
     }
 
+    public float getSubtitleScale() {
+        return mSubtitleScale;
+    }
+
+    public void setSubtitleScale(float scale) {
+        mSubtitleScale = scale;
+        persistData();
+    }
+
+    public float getSubtitlePosition() {
+        return mSubtitlePosition;
+    }
+
+    public void setSubtitlePosition(float position) {
+        mSubtitlePosition = position;
+        persistData();
+    }
+
+    public float getPlayerVolume() {
+        return mPlayerVolume;
+    }
+
+    public void setPlayerVolume(float scale) {
+        mPlayerVolume = scale;
+        persistData();
+    }
+
     public void setVideoZoomMode(int mode) {
         mVideoZoomMode = mode;
         persistData();
@@ -343,11 +442,55 @@ public class PlayerData {
         return mIsSonyTimerFixEnabled;
     }
 
+    public void enableTimeCorrection(boolean enable) {
+        mIsTimeCorrectionEnabled = enable;
+        persistData();
+    }
+
+    public boolean isTimeCorrectionEnabled() {
+        return mIsTimeCorrectionEnabled;
+    }
+
+    public FormatItem getDefaultAudioFormat() {
+        String language = LocaleUtility.getCurrentLanguage(mPrefs.getContext());
+
+        return ExoFormatItem.fromAudioSpecs(String.format("%s,%s", "mp4a", language));
+    }
+
+    public FormatItem getDefaultVideoFormat() {
+        FormatItem formatItem = mDefaultVideoFormats.get(Build.MODEL);
+
+        return formatItem != null ? formatItem : Helpers.isVP9Supported() ? FormatItem.VIDEO_FHD_VP9_60 : FormatItem.VIDEO_HD_AVC_30;
+    }
+
+    public int getStartSeekIncrementMs() {
+        return mStartSeekIncrementMs;
+    }
+
+    public void setStartSeekIncrementMs(int startSeekIncrementMs) {
+        mStartSeekIncrementMs = startSeekIncrementMs;
+        persistData();
+    }
+
     private void initSubtitleStyles() {
-        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_default, R.color.light_grey, R.color.transparent, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW));
-        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_semi_transparent_bg, R.color.light_grey, R.color.semi_grey, CaptionStyleCompat.EDGE_TYPE_OUTLINE));
-        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_black_bg, R.color.light_grey, R.color.black, CaptionStyleCompat.EDGE_TYPE_OUTLINE));
-        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_yellow, R.color.yellow, R.color.transparent, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW));
+        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_white_transparent, R.color.light_grey, R.color.transparent, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW));
+        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_white_semi_transparent, R.color.light_grey, R.color.semi_transparent, CaptionStyleCompat.EDGE_TYPE_OUTLINE));
+        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_white_black, R.color.light_grey, R.color.black, CaptionStyleCompat.EDGE_TYPE_OUTLINE));
+        mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_yellow_transparent, R.color.yellow, R.color.transparent, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW));
+
+        if (Build.VERSION.SDK_INT >= 19) {
+            mSubtitleStyles.add(new SubtitleStyle(R.string.subtitle_system));
+        }
+    }
+
+    /**
+     * Overrides for auto detected values
+     */
+    private void initDefaultFormats() {
+        mDefaultVideoFormats.put("SHIELD Android TV", FormatItem.VIDEO_4K_VP9_60);
+        mDefaultVideoFormats.put("AFTMM", FormatItem.VIDEO_4K_VP9_60); // Stick 4K 2018
+        mDefaultVideoFormats.put("AFTKA", FormatItem.VIDEO_4K_VP9_60); // Stick 4K Max 2021
+        mDefaultVideoFormats.put("P1", FormatItem.VIDEO_FHD_AVC_60); // Chinese projector (see annoying emails)
     }
 
     private void restoreData() {
@@ -359,13 +502,13 @@ public class PlayerData {
         mUIHideTimeoutSec = Helpers.parseInt(split, 1, 3);
         mIsAbsoluteDateEnabled = Helpers.parseBoolean(split, 2, false);
         mSeekPreviewMode = Helpers.parseInt(split, 3, SEEK_PREVIEW_SINGLE);
-        mIsPauseOnSeekEnabled = Helpers.parseBoolean(split, 4, false);
+        mIsSeekConfirmPauseEnabled = Helpers.parseBoolean(split, 4, false);
         mIsClockEnabled = Helpers.parseBoolean(split, 5, true);
         mIsRemainingTimeEnabled = Helpers.parseBoolean(split, 6, true);
         mBackgroundMode = Helpers.parseInt(split, 7, PlaybackEngineController.BACKGROUND_MODE_DEFAULT);
         // afrData was there
-        mVideoFormat = Helpers.firstNonNull(ExoFormatItem.from(Helpers.parseStr(split, 9)), FormatItem.VIDEO_HD_AVC_30);
-        mAudioFormat = Helpers.firstNonNull(ExoFormatItem.from(Helpers.parseStr(split, 10)), FormatItem.AUDIO_HQ_MP4A);
+        mVideoFormat = Helpers.firstNonNull(ExoFormatItem.from(Helpers.parseStr(split, 9)), getDefaultVideoFormat());
+        mAudioFormat = Helpers.firstNonNull(ExoFormatItem.from(Helpers.parseStr(split, 10)), getDefaultAudioFormat());
         mSubtitleFormat = ExoFormatItem.from(Helpers.parseStr(split, 11));
         mVideoBufferType = Helpers.parseInt(split, 12, PlaybackEngineController.BUFFER_LOW);
         mSubtitleStyleIndex = Helpers.parseInt(split, 13, 1);
@@ -379,13 +522,25 @@ public class PlayerData {
         mIsRememberSpeedEnabled = Helpers.parseBoolean(split, 21, false);
         mPlaybackMode = Helpers.parseInt(split, 22, PlaybackEngineController.PLAYBACK_MODE_PLAY_ALL);
         // didn't remember what was there
-        mIsLowQualityEnabled = Helpers.parseBoolean(split, 24, false);
+        mIsLegacyCodecsForced = Helpers.parseBoolean(split, 24, VERSION.SDK_INT <= 19); // Android 4 playback crash fix
         mIsSonyTimerFixEnabled = Helpers.parseBoolean(split, 25, false);
         // old player tweaks
         mIsQualityInfoEnabled = Helpers.parseBoolean(split, 28, true);
         mIsRememberSpeedEachEnabled = Helpers.parseBoolean(split, 29, false);
         mVideoAspectRatio = Helpers.parseFloat(split, 30, PlaybackEngineController.ASPECT_RATIO_DEFAULT);
         mIsGlobalClockEnabled = Helpers.parseBoolean(split, 31, false);
+        mIsTimeCorrectionEnabled = Helpers.parseBoolean(split, 32, true);
+        mIsGlobalEndingTimeEnabled = Helpers.parseBoolean(split, 33, false);
+        mIsEndingTimeEnabled = Helpers.parseBoolean(split, 34, false);
+        mIsDoubleRefreshRateEnabled = Helpers.parseBoolean(split, 35, true);
+        mIsSeekConfirmPlayEnabled = Helpers.parseBoolean(split, 36, false);
+        mStartSeekIncrementMs = Helpers.parseInt(split, 37, 10_000);
+        // old subs size px
+        mSubtitleScale = Helpers.parseFloat(split, 39, 1.0f);
+        mPlayerVolume = Helpers.parseFloat(split, 40, 1.0f);
+        mIsTooltipsEnabled = Helpers.parseBoolean(split, 41, true);
+        mSubtitlePosition = Helpers.parseFloat(split, 42, 0.1f);
+        mIsNumberKeySeekEnabled = Helpers.parseBoolean(split, 43, true);
 
         if (!mIsRememberSpeedEnabled) {
             mSpeed = 1.0f;
@@ -393,13 +548,15 @@ public class PlayerData {
     }
 
     private void persistData() {
-        mPrefs.setData(VIDEO_PLAYER_DATA, Helpers.mergeObject(mOKButtonBehavior, mUIHideTimeoutSec, mIsAbsoluteDateEnabled, mSeekPreviewMode, mIsPauseOnSeekEnabled,
+        mPrefs.setData(VIDEO_PLAYER_DATA, Helpers.mergeObject(mOKButtonBehavior, mUIHideTimeoutSec, mIsAbsoluteDateEnabled, mSeekPreviewMode, mIsSeekConfirmPauseEnabled,
                 mIsClockEnabled, mIsRemainingTimeEnabled, mBackgroundMode, null, // afrData was there
                 Helpers.toString(mVideoFormat), Helpers.toString(mAudioFormat), Helpers.toString(mSubtitleFormat),
                 mVideoBufferType, mSubtitleStyleIndex, mVideoZoomMode, mSpeed,
                 mIsAfrEnabled, mIsAfrFpsCorrectionEnabled, mIsAfrResSwitchEnabled, mAfrPauseSec, mAudioDelayMs,
                 mIsRememberSpeedEnabled, mPlaybackMode, null, // didn't remember what was there
-                mIsLowQualityEnabled, mIsSonyTimerFixEnabled, null, null, // old player tweaks
-                mIsQualityInfoEnabled, mIsRememberSpeedEachEnabled, mVideoAspectRatio, mIsGlobalClockEnabled));
+                mIsLegacyCodecsForced, mIsSonyTimerFixEnabled, null, null, // old player tweaks
+                mIsQualityInfoEnabled, mIsRememberSpeedEachEnabled, mVideoAspectRatio, mIsGlobalClockEnabled, mIsTimeCorrectionEnabled,
+                mIsGlobalEndingTimeEnabled, mIsEndingTimeEnabled, mIsDoubleRefreshRateEnabled, mIsSeekConfirmPlayEnabled,
+                mStartSeekIncrementMs, null, mSubtitleScale, mPlayerVolume, mIsTooltipsEnabled, mSubtitlePosition, mIsNumberKeySeekEnabled));
     }
 }

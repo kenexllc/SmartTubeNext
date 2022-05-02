@@ -2,8 +2,9 @@ apply from: gradle.ext.sharedModulesConstants
 
 buildscript {
     repositories {
-        jcenter()
         google()
+        mavenCentral()
+        jcenter()
     }
 
     dependencies {
@@ -12,12 +13,12 @@ buildscript {
 
         // Check that you have the Google Services Gradle plugin v4.3.2 or later
         // (if not, add it).
-        classpath 'com.google.gms:google-services:4.3.3'
+        classpath 'com.google.gms:google-services:4.3.10'
 
         // Add the Crashlytics Gradle plugin.
         // https://firebase.google.com/docs/crashlytics/get-started?platform=android
         // https://firebase.google.com/docs/android/setup
-        classpath 'com.google.firebase:firebase-crashlytics-gradle:2.3.0'
+        classpath 'com.google.firebase:firebase-crashlytics-gradle:2.7.1'
     }
 }
 
@@ -58,8 +59,8 @@ android {
         applicationId "com.liskovsoft.smarttubetv"
         minSdkVersion project.properties.minSdkVersion
         targetSdkVersion project.properties.targetSdkVersion
-        versionCode 381
-        versionName "11.91"
+        versionCode 664
+        versionName "14.74"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
 
@@ -69,10 +70,15 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // Enable minification
+            // shrinkResources true
+            // minifyEnabled true
+
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+
+            // signingConfig signingConfigs.release
         }
-        // Use same key for release and debug
+        // Use same key for release and debug for testing
         // debug {
         //     signingConfig signingConfigs.release
         // }
@@ -133,6 +139,11 @@ android {
             output.outputFileName = new File(newApkName)
         }
     }
+
+    packagingOptions {
+        // openvpn module fix: More than one file was found with OS independent path 'META-INF/com.android.tools/proguard/coroutines.pro'
+        exclude 'META-INF/com.android.tools/proguard/coroutines.pro'
+    }
 }
 
 dependencies {
@@ -175,6 +186,7 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:' + testXSupportLibraryVersion
     androidTestImplementation 'androidx.test.espresso:espresso-core:' + espressoVersion
 
+    implementation project(':common')
     implementation project(':sharedutils')
     implementation project(':mediaserviceinterfaces')
     implementation project(':youtubeapi')
@@ -182,10 +194,13 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxandroid:' + rxAndroidVersion
     implementation 'io.reactivex.rxjava2:rxjava:' + rxJavaVersion
 
-    implementation project(path: ':common')
-
     // Add the Firebase Crashlytics SDK.
     stbetaImplementation('com.google.firebase:firebase-crashlytics:' + firebaseCrashlyticsVersion) {
         transitive = true
     }
+
+    // Android 4 SponsorBlock fix???
+    // implementation 'org.conscrypt:conscrypt-android:2.5.2'
+
+    // debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.8.1'
 }
